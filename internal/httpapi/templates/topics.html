@@ -1,0 +1,29 @@
+{{define "content"}}
+<h1>Topics</h1>
+{{if .Error}}<p class="error">{{.Error}}</p>{{end}}
+
+<form method="post" action="/topics">
+  <input type="text" name="name" placeholder="New topic name" required>
+  <button type="submit">Create</button>
+</form>
+
+<table>
+  <tr><th>Name</th><th>Rename</th><th>Delete</th></tr>
+  {{range .Topics}}
+  <tr>
+    <td>{{.Name}}</td>
+    <td>
+      <form method="post" action="/topics/{{.ID}}/rename">
+        <input type="text" name="name" value="{{.Name}}">
+        <button type="submit">Rename</button>
+      </form>
+    </td>
+    <td>
+      <form method="post" action="/topics/{{.ID}}/delete" onsubmit="return confirm('Delete this topic? Problems keep their other tags.');">
+        <button type="submit">Delete</button>
+      </form>
+    </td>
+  </tr>
+  {{end}}
+</table>
+{{end}}

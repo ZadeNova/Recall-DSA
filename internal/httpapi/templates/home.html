@@ -1,0 +1,8 @@
+{{define "content"}}
+<h1>Recall-DSA</h1>
+<p><strong>{{.DueCount}}</strong> due for review.</p>
+
+{{template "glance-table" .Due}}
+
+<p><a href="/due">Go to Due →</a></p>
+{{end}}

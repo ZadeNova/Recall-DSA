@@ -1,0 +1,20 @@
+{{define "content"}}
+<h1>Edit Problem</h1>
+{{if .Error}}<p class="error">{{.Error}}</p>{{end}}
+<form method="post" action="/problems/{{.Problem.ID}}/update">
+  <p><label>Title <input type="text" name="title" value="{{.Problem.Title}}" required></label></p>
+  <p><label>LeetCode URL or slug <input type="text" name="url" value="{{.Problem.URL}}" required></label></p>
+  <p><label>Difficulty
+    <select name="difficulty">
+      <option value="Easy" {{if eq .Problem.Difficulty "Easy"}}selected{{end}}>Easy</option>
+      <option value="Medium" {{if eq .Problem.Difficulty "Medium"}}selected{{end}}>Medium</option>
+      <option value="Hard" {{if eq .Problem.Difficulty "Hard"}}selected{{end}}>Hard</option>
+    </select>
+  </label></p>
+  <p><label>Topics (comma-separated) <input type="text" name="topics" size="40" value="{{range $i, $t := .Problem.Topics}}{{if $i}}, {{end}}{{$t}}{{end}}"></label></p>
+  <button type="submit">Save</button>
+</form>
+<form method="post" action="/problems/{{.Problem.ID}}/delete" onsubmit="return confirm('Delete this problem? This also removes its attempt history.');">
+  <button type="submit">Delete</button>
+</form>
+{{end}}

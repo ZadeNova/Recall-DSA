@@ -1,0 +1,26 @@
+{{define "content"}}
+<h1>Library</h1>
+<form method="get" action="/library">
+  <select name="topic">
+    <option value="">All topics</option>
+    {{range .Topics}}<option value="{{.}}" {{if eq . $.SelectedTopic}}selected{{end}}>{{.}}</option>{{end}}
+  </select>
+  <select name="difficulty">
+    <option value="">All difficulties</option>
+    {{range .Difficulties}}<option value="{{.}}" {{if eq . $.SelectedDifficulty}}selected{{end}}>{{.}}</option>{{end}}
+  </select>
+  <button type="submit">Filter</button>
+</form>
+
+<table>
+  <tr><th>Title</th><th>Difficulty</th><th>Topics</th><th></th></tr>
+  {{range .Problems}}
+  <tr>
+    <td><a href="{{.URL}}" target="leetcode">{{.Title}}</a></td>
+    <td>{{.Difficulty}}</td>
+    <td>{{range .Topics}}<span class="topic-tag">{{.}}</span>{{end}}</td>
+    <td><a href="/problems/{{.ID}}/edit">Edit</a></td>
+  </tr>
+  {{end}}
+</table>
+{{end}}

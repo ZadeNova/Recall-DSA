@@ -1,0 +1,17 @@
+{{define "glance-table"}}
+{{if not .Items}}
+  <p>{{.EmptyMessage}}</p>
+{{else}}
+<table>
+  <tr><th>Problem</th><th>Difficulty</th><th>Topics</th><th>Next Review</th></tr>
+  {{range .Items}}
+  <tr>
+    <td><a href="{{.URL}}" target="leetcode">{{.Title}}</a></td>
+    <td>{{.Difficulty}}</td>
+    <td>{{range .Topics}}<span class="topic-tag">{{.}}</span>{{end}}</td>
+    <td>{{.NextReviewDate.Format "2006-01-02"}}</td>
+  </tr>
+  {{end}}
+</table>
+{{end}}
+{{end}}

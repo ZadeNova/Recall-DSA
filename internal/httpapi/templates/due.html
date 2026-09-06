@@ -1,0 +1,19 @@
+{{define "content"}}
+<h1>Due for review</h1>
+
+<form method="get" action="/due">
+  <select name="topic">
+    <option value="">All topics</option>
+    {{range .Topics}}<option value="{{.}}" {{if eq . $.Selected}}selected{{end}}>{{.}}</option>{{end}}
+  </select>
+  <button type="submit">Filter</button>
+</form>
+
+<h2>Due now</h2>
+{{template "due-table" .Items}}
+
+<div class="muted-section">
+  <h2>Upcoming (next 7 days)</h2>
+  {{template "glance-table" .Upcoming}}
+</div>
+{{end}}

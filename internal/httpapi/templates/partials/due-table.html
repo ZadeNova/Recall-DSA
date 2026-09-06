@@ -1,0 +1,23 @@
+{{define "due-table"}}
+{{if not .}}
+  <p>Nothing due right now — go solve something new on your own and log it via <a href="/problems/new">Add Problem</a>.</p>
+{{else}}
+<table>
+  <tr><th>Problem</th><th>Difficulty</th><th>Topics</th><th>Next Review</th><th>Grade</th></tr>
+  {{range .}}
+  <tr>
+    <td><a href="{{.URL}}" target="leetcode">{{.Title}}</a></td>
+    <td>{{.Difficulty}}</td>
+    <td>{{range .Topics}}<span class="topic-tag">{{.}}</span>{{end}}</td>
+    <td>{{.NextReviewDate.Format "2006-01-02"}}</td>
+    <td>
+      <form class="grade-form" method="post" action="/problems/{{.ID}}/grade"><button name="grade" value="Failed">Failed</button></form>
+      <form class="grade-form" method="post" action="/problems/{{.ID}}/grade"><button name="grade" value="Hard">Hard</button></form>
+      <form class="grade-form" method="post" action="/problems/{{.ID}}/grade"><button name="grade" value="Good">Good</button></form>
+      <form class="grade-form" method="post" action="/problems/{{.ID}}/grade"><button name="grade" value="Easy">Easy</button></form>
+    </td>
+  </tr>
+  {{end}}
+</table>
+{{end}}
+{{end}}

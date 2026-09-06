@@ -6,6 +6,8 @@ Personal spaced-repetition tool for LeetCode/NeetCode 150 practice. Tracks every
 
 **Full design spec: `SPEC.md` in repo root.** This project has already been through extensive design iteration — read it before making any architectural decision. Most "obvious" alternatives (Postgres, a TUI, curriculum auto-guidance, FSRS, auth/multi-tenancy) were considered and deliberately rejected; see SPEC.md §13 before reintroducing any of them.
 
+**Frontend design spec: `FRONTEND.md` in repo root.** Colors, typography, page-by-page UX decisions, open UX questions, and frontend-specific implementation conventions live there, not here. Read it before making any visual or UX change, and record new frontend decisions there rather than only in chat.
+
 ## Stack
 
 - Go — backend, service layer, single binary

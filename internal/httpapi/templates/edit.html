@@ -4,13 +4,8 @@
 <form method="post" action="/problems/{{.Problem.ID}}/update">
   <p><label>Title <input type="text" name="title" value="{{.Problem.Title}}" required></label></p>
   <p><label>LeetCode URL or slug <input type="text" name="url" class="mono" value="{{.Problem.URL}}" required></label></p>
-  <p><label>Difficulty
-    <select name="difficulty">
-      <option value="Easy" {{if eq .Problem.Difficulty "Easy"}}selected{{end}}>Easy</option>
-      <option value="Medium" {{if eq .Problem.Difficulty "Medium"}}selected{{end}}>Medium</option>
-      <option value="Hard" {{if eq .Problem.Difficulty "Hard"}}selected{{end}}>Hard</option>
-    </select>
-  </label></p>
+  <p>Difficulty</p>
+  {{template "difficulty-picker" .Problem.Difficulty}}
   <p>Topics</p>
   {{template "topic-picker" .}}
   <button type="submit">Save</button>

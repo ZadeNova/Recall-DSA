@@ -176,6 +176,26 @@
   .topic-count-bar-fill { display: block; height: 100%; background: var(--tag-accent); }
   .distribution-row { padding: 0.4rem 0; }
   .distribution-row-header { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 0.2rem; }
+  .difficulty-pill-group { display: flex; gap: 0.5rem; margin: 0.25rem 0 0.75rem; }
+  .difficulty-pill { display: flex; align-items: center; justify-content: center; flex: 1; padding: 0.4rem 0.6rem; border: 1px solid var(--border); border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 500; }
+  .difficulty-pill input { display: none; }
+  .difficulty-pill-Easy:has(input:checked) { background: var(--difficulty-easy); border-color: var(--difficulty-easy); color: var(--color-base); }
+  .difficulty-pill-Medium:has(input:checked) { background: var(--difficulty-medium); border-color: var(--difficulty-medium); color: var(--color-base); }
+  .difficulty-pill-Hard:has(input:checked) { background: var(--difficulty-hard); border-color: var(--difficulty-hard); color: var(--color-base); }
+  .grade-card-group { display: flex; gap: 0.6rem; flex-wrap: wrap; margin: 0.25rem 0 0.75rem; }
+  .grade-card { flex: 1; min-width: 140px; padding: 0.6rem 0.8rem; border: 1px solid var(--border); border-radius: 4px; cursor: pointer; }
+  .grade-card input { display: none; }
+  .grade-card-name { font-size: 13px; font-weight: 600; }
+  .grade-card-interval { font-size: 16px; font-weight: 600; margin: 0.2rem 0; }
+  .grade-card-desc { font-size: 12px; color: var(--muted-text); }
+  .grade-card-failed:has(input:checked) { border-color: var(--grade-failed); background: var(--tag-bg); }
+  .grade-card-failed .grade-card-name { color: var(--grade-failed); }
+  .grade-card-hard:has(input:checked) { border-color: var(--grade-hard); background: var(--tag-bg); }
+  .grade-card-hard .grade-card-name { color: var(--grade-hard); }
+  .grade-card-good:has(input:checked) { border-color: var(--grade-good); background: var(--tag-bg); }
+  .grade-card-good .grade-card-name { color: var(--grade-good); }
+  .grade-card-easy:has(input:checked) { border-color: var(--grade-easy); background: var(--tag-bg); }
+  .grade-card-easy .grade-card-name { color: var(--grade-easy); }
   .error { color: var(--danger); }
   .muted-section { background: var(--surface-bg); color: var(--muted-text); font-size: 13px; padding: 0.75rem 1rem; border-radius: 4px; margin-top: 1rem; }
   .muted-section table { margin-top: 0.5rem; }

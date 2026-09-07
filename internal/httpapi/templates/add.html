@@ -4,23 +4,37 @@
 <form method="post" action="/problems">
   <p><label>Title <input type="text" name="title" required></label></p>
   <p><label>LeetCode URL or slug <input type="text" name="url" class="mono" required></label></p>
-  <p><label>Difficulty
-    <select name="difficulty">
-      <option value="Easy">Easy</option>
-      <option value="Medium">Medium</option>
-      <option value="Hard">Hard</option>
-    </select>
-  </label></p>
+  <p>Difficulty</p>
+  {{template "difficulty-picker" "Easy"}}
   <p>Topics</p>
   {{template "topic-picker" .}}
-  <p><label>First grade
-    <select name="grade">
-      <option value="Failed">Failed</option>
-      <option value="Hard">Hard</option>
-      <option value="Good" selected>Good</option>
-      <option value="Easy">Easy</option>
-    </select>
-  </label></p>
+  <p>First grade</p>
+  <div class="grade-card-group">
+    <label class="grade-card grade-card-failed">
+      <input type="radio" name="grade" value="Failed">
+      <div class="grade-card-name">Failed</div>
+      <div class="grade-card-interval">Tomorrow</div>
+      <div class="grade-card-desc">Couldn't solve it</div>
+    </label>
+    <label class="grade-card grade-card-hard">
+      <input type="radio" name="grade" value="Hard">
+      <div class="grade-card-name">Hard</div>
+      <div class="grade-card-interval">3 days</div>
+      <div class="grade-card-desc">Solved, but struggled</div>
+    </label>
+    <label class="grade-card grade-card-good">
+      <input type="radio" name="grade" value="Good" checked>
+      <div class="grade-card-name">Good</div>
+      <div class="grade-card-interval">5 days</div>
+      <div class="grade-card-desc">Solved with effort</div>
+    </label>
+    <label class="grade-card grade-card-easy">
+      <input type="radio" name="grade" value="Easy">
+      <div class="grade-card-name">Easy</div>
+      <div class="grade-card-interval">7 days</div>
+      <div class="grade-card-desc">Solved easily</div>
+    </label>
+  </div>
   <button type="submit">Add</button>
 </form>
 {{end}}

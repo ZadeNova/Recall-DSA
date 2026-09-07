@@ -1,0 +1,7 @@
+{{define "difficulty-picker"}}
+<div class="difficulty-pill-group">
+  <label class="difficulty-pill difficulty-pill-Easy"><input type="radio" name="difficulty" value="Easy" {{if eq . "Easy"}}checked{{end}}>Easy</label>
+  <label class="difficulty-pill difficulty-pill-Medium"><input type="radio" name="difficulty" value="Medium" {{if eq . "Medium"}}checked{{end}}>Medium</label>
+  <label class="difficulty-pill difficulty-pill-Hard"><input type="radio" name="difficulty" value="Hard" {{if eq . "Hard"}}checked{{end}}>Hard</label>
+</div>
+{{end}}

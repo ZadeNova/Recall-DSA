@@ -115,6 +115,54 @@ func TestHome_IsPureGlanceNoGradeButtonsAndNoUpcoming(t *testing.T) {
 	}
 }
 
+func TestHome_ShowsStatsAndUpcomingByDay(t *testing.T) {
+	h, svc := newTestServer(t)
+	ctx := t.Context()
+
+	if _, err := svc.AddProblem(ctx, service.AddProblemInput{
+		Title: "Two Sum", URL: "two-sum", Difficulty: service.DifficultyEasy,
+		Grade: "Good", At: time.Now(), // +5 days -> "In 5 days" on the sidebar
+	}); err != nil {
+		t.Fatalf("AddProblem: unexpected err: %v", err)
+	}
+	if _, err := svc.AddProblem(ctx, service.AddProblemInput{
+		Title: "3Sum", URL: "3sum", Difficulty: service.DifficultyMedium,
+		Grade: "Good", At: time.Now(),
+	}); err != nil {
+		t.Fatalf("AddProblem: unexpected err: %v", err)
+	}
+
+	rec := doGet(t, h, "/")
+	body := rec.Body.String()
+
+	if !strings.Contains(body, `<div class="stat-number">2</div>`) {
+		t.Errorf("home missing Total Tracked = 2:\n%s", body)
+	}
+	if !strings.Contains(body, "1 Easy") || !strings.Contains(body, "1 Medium") || !strings.Contains(body, "0 Hard") {
+		t.Errorf("home missing correct difficulty split:\n%s", body)
+	}
+	if !strings.Contains(body, "In 5 days") || !strings.Contains(body, "2 problems") {
+		t.Errorf("home missing the upcoming-by-day sidebar entry:\n%s", body)
+	}
+}
+
+func TestGlanceTable_ShowsIntervalColumn(t *testing.T) {
+	h, svc := newTestServer(t)
+	ctx := t.Context()
+
+	if _, err := svc.AddProblem(ctx, service.AddProblemInput{
+		Title: "Two Sum", URL: "two-sum", Difficulty: service.DifficultyEasy,
+		Grade: "Good", At: time.Now().AddDate(0, 0, -10),
+	}); err != nil {
+		t.Fatalf("AddProblem: unexpected err: %v", err)
+	}
+
+	body := doGet(t, h, "/").Body.String()
+	if !strings.Contains(body, "5 days") {
+		t.Errorf("home glance table missing the Interval column:\n%s", body)
+	}
+}
+
 func TestDue_EmptyShowsNothingDueMessage(t *testing.T) {
 	h, _ := newTestServer(t)
 	rec := doGet(t, h, "/due")

@@ -3,12 +3,13 @@
   <p>{{.EmptyMessage}}</p>
 {{else}}
 <table>
-  <tr><th>Problem</th><th>Difficulty</th><th>Topics</th><th>Next Review</th></tr>
+  <tr><th>Problem</th><th>Difficulty</th><th>Topics</th><th>Interval</th><th>Next Review</th></tr>
   {{range .Items}}
   <tr>
     <td><a class="problem-title" href="{{.URL}}" target="leetcode">{{.Title}}</a></td>
     <td class="difficulty-{{.Difficulty}}">{{.Difficulty}}</td>
     <td>{{range .Topics}}<span class="topic-tag">{{.}}</span>{{end}}</td>
+    <td class="meta">{{.IntervalDays}} days</td>
     <td class="meta">{{.NextReviewDate.Format "2006-01-02"}}</td>
   </tr>
   {{end}}

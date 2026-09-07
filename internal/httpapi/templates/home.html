@@ -2,7 +2,45 @@
 <h1>Recall-DSA</h1>
 <p><strong>{{.DueCount}}</strong> due for review.</p>
 
-{{template "glance-table" .Due}}
+<div class="stats-row">
+  <div class="stat-card">
+    <span class="meta">Total Tracked</span>
+    <div class="stat-number">{{.TotalTracked}}</div>
+  </div>
+  <div class="stat-card">
+    <span class="meta">Difficulty Split</span>
+    <div class="stat-number">
+      <span class="difficulty-Easy">{{.Difficulty.Easy}} Easy</span> ·
+      <span class="difficulty-Medium">{{.Difficulty.Medium}} Medium</span> ·
+      <span class="difficulty-Hard">{{.Difficulty.Hard}} Hard</span>
+    </div>
+  </div>
+</div>
 
-<p><a href="/due">Go to Due →</a></p>
+<div class="home-layout">
+  <div class="home-main">
+    {{template "glance-table" .Due}}
+    <p><a href="/due" class="btn-link">Go to Due →</a></p>
+  </div>
+
+  <div class="home-sidebar">
+    <div class="sidebar-card">
+      <h2>Review Load — Next 5 Days</h2>
+      <ul class="upcoming-by-day">
+        {{range .UpcomingByDay}}
+        <li>
+          <span>{{if eq .DaysFromNow 1}}Tomorrow{{else}}In {{.DaysFromNow}} days{{end}}</span>
+          <span class="meta">{{.Count}} problem{{if ne .Count 1}}s{{end}}</span>
+        </li>
+        {{end}}
+      </ul>
+    </div>
+
+    {{if .Quote}}
+    <div class="sidebar-card quote-card">
+      <p>&ldquo;{{.Quote}}&rdquo;</p>
+    </div>
+    {{end}}
+  </div>
+</div>
 {{end}}

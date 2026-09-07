@@ -30,8 +30,12 @@ type dueViewData struct {
 }
 
 type homeViewData struct {
-	DueCount int
-	Due      glanceTableData
+	DueCount      int
+	Due           glanceTableData
+	TotalTracked  int
+	Difficulty    service.DifficultyCounts
+	UpcomingByDay []service.DayCount
+	Quote         string
 }
 
 // upcomingWindowDays is /due's Upcoming section lookahead: informational
@@ -41,6 +45,11 @@ type homeViewData struct {
 // grading before the interval has actually elapsed would inflate
 // ease/interval on a false signal.
 const upcomingWindowDays = 7
+
+// homeSidebarWindowDays is Home's compact "Review Load" sidebar — a
+// shorter, day-by-day glance distinct from /due's full 7-day Upcoming
+// list (FRONTEND.md, Home dashboard enrichment).
+const homeSidebarWindowDays = 5
 
 // handleHome is the dashboard landing page: a due count and a read-only
 // glance at what's due. It is deliberately not an action surface — all
@@ -56,9 +65,31 @@ func (s *Server) handleHome(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	total, err := s.svc.CountProblems(ctx)
+	if err != nil {
+		s.renderError(w, r, http.StatusInternalServerError, err)
+		return
+	}
+
+	difficulty, err := s.svc.DifficultyBreakdown(ctx)
+	if err != nil {
+		s.renderError(w, r, http.StatusInternalServerError, err)
+		return
+	}
+
+	byDay, err := s.svc.UpcomingByDay(ctx, homeSidebarWindowDays)
+	if err != nil {
+		s.renderError(w, r, http.StatusInternalServerError, err)
+		return
+	}
+
 	data := homeViewData{
-		DueCount: len(dueItems),
-		Due:      glanceTableData{Items: dueItems, EmptyMessage: nothingDueMessage},
+		DueCount:      len(dueItems),
+		Due:           glanceTableData{Items: dueItems, EmptyMessage: nothingDueMessage},
+		TotalTracked:  total,
+		Difficulty:    difficulty,
+		UpcomingByDay: byDay,
+		Quote:         randomQuote(),
 	}
 	s.render(w, r, s.tpl.home, data)
 }

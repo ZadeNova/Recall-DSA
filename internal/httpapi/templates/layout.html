@@ -161,6 +161,17 @@
   .topic-chip { display: inline-flex; align-items: center; gap: 0.3rem; padding: 0.15rem 0.55rem; border-radius: 999px; background: var(--tag-bg); color: var(--tag-accent); font-size: 12px; font-weight: 500; cursor: pointer; }
   .topic-chip:has(input:checked) { background: var(--tag-accent); color: var(--color-base); }
   .topic-chip input[type="checkbox"] { margin: 0; }
+  .stats-row { display: flex; flex-wrap: wrap; gap: 0.75rem; margin: 1rem 0; }
+  .stat-card { flex: 1; min-width: 180px; background: var(--surface-bg); border-radius: 4px; padding: 0.6rem 0.9rem; }
+  .stat-number { font-size: 20px; font-weight: 600; margin-top: 0.2rem; }
+  .home-layout { display: flex; gap: 1.5rem; flex-wrap: wrap; align-items: flex-start; }
+  .home-main { flex: 2; min-width: 320px; }
+  .home-sidebar { flex: 1; min-width: 240px; display: flex; flex-direction: column; gap: 0.75rem; }
+  .sidebar-card { background: var(--surface-bg); border-radius: 4px; padding: 0.75rem 1rem; }
+  .upcoming-by-day { list-style: none; margin: 0.5rem 0 0; padding: 0; }
+  .upcoming-by-day li { display: flex; justify-content: space-between; padding: 0.25rem 0; border-bottom: 1px solid var(--border); }
+  .upcoming-by-day li:last-child { border-bottom: none; }
+  .quote-card p { font-style: italic; margin: 0; color: var(--muted-text); }
   .error { color: var(--danger); }
   .muted-section { background: var(--surface-bg); color: var(--muted-text); font-size: 13px; padding: 0.75rem 1rem; border-radius: 4px; margin-top: 1rem; }
   .muted-section table { margin-top: 0.5rem; }

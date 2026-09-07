@@ -35,6 +35,8 @@ func (s *Server) Routes() http.Handler {
 
 	mux.HandleFunc("GET /{$}", s.handleHome)
 
+	mux.Handle("GET /assets/", http.FileServerFS(assetsFS))
+
 	mux.HandleFunc("GET /due", s.handleDue)
 	mux.HandleFunc("POST /problems/{id}/grade", s.handleGrade)
 

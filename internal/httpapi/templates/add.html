@@ -3,7 +3,7 @@
 {{if .Error}}<p class="error">{{.Error}}</p>{{end}}
 <form method="post" action="/problems">
   <p><label>Title <input type="text" name="title" required></label></p>
-  <p><label>LeetCode URL or slug <input type="text" name="url" required></label></p>
+  <p><label>LeetCode URL or slug <input type="text" name="url" class="mono" required></label></p>
   <p><label>Difficulty
     <select name="difficulty">
       <option value="Easy">Easy</option>
@@ -11,7 +11,8 @@
       <option value="Hard">Hard</option>
     </select>
   </label></p>
-  <p><label>Topics (comma-separated) <input type="text" name="topics" size="40"></label></p>
+  <p>Topics</p>
+  {{template "topic-picker" .}}
   <p><label>First grade
     <select name="grade">
       <option value="Failed">Failed</option>

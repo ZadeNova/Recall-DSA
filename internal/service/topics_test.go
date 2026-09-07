@@ -12,11 +12,11 @@ func TestListTopics_IncludesSeedAndCreated(t *testing.T) {
 	s := newTestService(t)
 	ctx := context.Background()
 
-	topic, err := s.CreateTopic(ctx, "Monotonic Stack")
+	topic, err := s.CreateTopic(ctx, "Segment Tree")
 	if err != nil {
 		t.Fatalf("CreateTopic: unexpected err: %v", err)
 	}
-	if topic.Name != "Monotonic Stack" || topic.ID == 0 {
+	if topic.Name != "Segment Tree" || topic.ID == 0 {
 		t.Errorf("CreateTopic returned %+v", topic)
 	}
 
@@ -24,9 +24,9 @@ func TestListTopics_IncludesSeedAndCreated(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListTopics: unexpected err: %v", err)
 	}
-	// 18 seeded (internal/db/schema.sql) + 1 created here.
-	if len(topics) != 19 {
-		t.Errorf("len(topics) = %d, want 19", len(topics))
+	// 35 seeded (internal/db/schema.sql) + 1 created here.
+	if len(topics) != 36 {
+		t.Errorf("len(topics) = %d, want 36", len(topics))
 	}
 }
 

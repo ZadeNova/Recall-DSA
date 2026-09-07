@@ -373,13 +373,13 @@ func TestDeleteProblem_RemovesFromLibrary(t *testing.T) {
 func TestTopicsPage_CreateAppearsInList(t *testing.T) {
 	h, _ := newTestServer(t)
 
-	rec := doForm(t, h, http.MethodPost, "/topics", url.Values{"name": {"Monotonic Stack"}})
+	rec := doForm(t, h, http.MethodPost, "/topics", url.Values{"name": {"Segment Tree"}})
 	if rec.Code != http.StatusSeeOther {
 		t.Fatalf("create status = %d, want 303; body: %s", rec.Code, rec.Body.String())
 	}
 
 	rec = doGet(t, h, "/topics")
-	if !strings.Contains(rec.Body.String(), "Monotonic Stack") {
+	if !strings.Contains(rec.Body.String(), "Segment Tree") {
 		t.Errorf("topics page missing created topic:\n%s", rec.Body.String())
 	}
 }

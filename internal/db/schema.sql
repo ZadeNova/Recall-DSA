@@ -51,10 +51,15 @@ CREATE TABLE IF NOT EXISTS problem_topics (
 
 CREATE INDEX IF NOT EXISTS idx_problem_topics_topic_id ON problem_topics (topic_id);
 
--- Seed vocabulary: the standard NeetCode 150 categories (SPEC.md §3).
+-- Seed vocabulary (FRONTEND.md, topic reseed): NeetCode 150's 18
+-- categories kept verbatim, plus 17 LeetCode tags for concepts NC150
+-- has no category for at all (not finer subdivisions of something NC150
+-- already groups together — e.g. no separate "Array"/"Hash Table" since
+-- NC150's "Arrays & Hashing" already covers both).
 -- New tags can still be created freely later — this is a starting point,
 -- not a fixed list.
 INSERT OR IGNORE INTO topics (name) VALUES
+    -- NeetCode 150
     ('Arrays & Hashing'),
     ('Two Pointers'),
     ('Sliding Window'),
@@ -72,4 +77,22 @@ INSERT OR IGNORE INTO topics (name) VALUES
     ('Greedy'),
     ('Intervals'),
     ('Math & Geometry'),
-    ('Bit Manipulation');
+    ('Bit Manipulation'),
+    -- LeetCode gap-fill
+    ('String'),
+    ('Doubly-Linked List'),
+    ('Queue'),
+    ('Prefix Sum'),
+    ('Monotonic Stack'),
+    ('Recursion'),
+    ('Divide and Conquer'),
+    ('Enumeration'),
+    ('Simulation'),
+    ('Sorting'),
+    ('Memoization'),
+    ('Union-Find'),
+    ('Depth-First Search'),
+    ('Breadth-First Search'),
+    ('Counting'),
+    ('Database'),
+    ('Design');

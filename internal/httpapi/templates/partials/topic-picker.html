@@ -1,0 +1,23 @@
+{{define "topic-picker"}}
+<div class="topic-picker">
+  <input type="text" class="topic-filter" placeholder="Filter topics..." oninput="filterTopicChips(this)">
+  <div class="topic-chips">
+    {{range .AllTopics}}
+    <label class="topic-chip">
+      <input type="checkbox" name="topic" value="{{.}}" {{if index $.Selected .}}checked{{end}}>
+      <span>{{.}}</span>
+    </label>
+    {{end}}
+  </div>
+  <label>New topic(s) (comma-separated) <input type="text" name="new_topics" size="30"></label>
+</div>
+<script>
+  function filterTopicChips(input) {
+    var q = input.value.toLowerCase();
+    var chips = input.parentElement.querySelectorAll(".topic-chip");
+    chips.forEach(function (chip) {
+      chip.hidden = q !== "" && chip.textContent.toLowerCase().indexOf(q) === -1;
+    });
+  }
+</script>
+{{end}}

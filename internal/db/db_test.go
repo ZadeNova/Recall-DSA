@@ -35,8 +35,8 @@ func TestOpen_SeedsStandardTopics(t *testing.T) {
 	if err := conn.QueryRow(`SELECT COUNT(*) FROM topics`).Scan(&count); err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
-	if count != 18 {
-		t.Errorf("topic count = %d, want 18 (the standard NeetCode 150 categories)", count)
+	if count != 35 {
+		t.Errorf("topic count = %d, want 35 (NeetCode 150's 18 categories + 17 LeetCode gap-fill tags)", count)
 	}
 }
 
@@ -59,8 +59,8 @@ func TestOpen_Idempotent(t *testing.T) {
 	if err := second.QueryRow(`SELECT COUNT(*) FROM topics`).Scan(&count); err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
-	if count != 18 {
-		t.Errorf("topic count after reopen = %d, want 18 (re-applying schema must not duplicate seed rows)", count)
+	if count != 35 {
+		t.Errorf("topic count after reopen = %d, want 35 (re-applying schema must not duplicate seed rows)", count)
 	}
 }
 

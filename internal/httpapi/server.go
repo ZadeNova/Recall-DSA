@@ -37,6 +37,8 @@ func (s *Server) Routes() http.Handler {
 
 	mux.Handle("GET /assets/", http.FileServerFS(assetsFS))
 
+	mux.HandleFunc("GET /theme/{name}", s.handleSetTheme)
+
 	mux.HandleFunc("GET /due", s.handleDue)
 	mux.HandleFunc("POST /problems/{id}/grade", s.handleGrade)
 
@@ -73,10 +75,11 @@ type errorViewData struct {
 	Message    string
 }
 
-func (s *Server) renderError(w http.ResponseWriter, status int, err error) {
+func (s *Server) renderError(w http.ResponseWriter, r *http.Request, status int, err error) {
 	w.WriteHeader(status)
 	data := errorViewData{Status: status, StatusText: http.StatusText(status), Message: err.Error()}
-	if tplErr := s.tpl.errorPage.ExecuteTemplate(w, "layout", data); tplErr != nil {
+	wrapped := layoutData{Theme: themeFromRequest(r), Active: navActiveFor(r.URL.Path), DueCount: s.dueCount(r), Page: data}
+	if tplErr := s.tpl.errorPage.ExecuteTemplate(w, "layout", wrapped); tplErr != nil {
 		// The error template itself failed — fall back to plain text
 		// rather than masking the original error with a template bug.
 		w.Write([]byte(err.Error()))
@@ -86,7 +89,7 @@ func (s *Server) renderError(w http.ResponseWriter, status int, err error) {
 // renderFormError re-renders a form page with a validation/service error
 // and a 422 status, instead of redirecting — so the user's input isn't
 // lost on a failed submission.
-func (s *Server) renderFormError(w http.ResponseWriter, tpl *template.Template, data any) {
+func (s *Server) renderFormError(w http.ResponseWriter, r *http.Request, tpl *template.Template, data any) {
 	w.WriteHeader(http.StatusUnprocessableEntity)
-	tpl.ExecuteTemplate(w, "layout", data)
+	tpl.ExecuteTemplate(w, "layout", layoutData{Theme: themeFromRequest(r), Active: navActiveFor(r.URL.Path), DueCount: s.dueCount(r), Page: data})
 }

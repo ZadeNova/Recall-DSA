@@ -52,7 +52,7 @@ func (s *Server) handleHome(w http.ResponseWriter, r *http.Request) {
 
 	dueItems, err := s.svc.RecommendDue(ctx, nil)
 	if err != nil {
-		s.renderError(w, http.StatusInternalServerError, err)
+		s.renderError(w, r, http.StatusInternalServerError, err)
 		return
 	}
 
@@ -60,9 +60,7 @@ func (s *Server) handleHome(w http.ResponseWriter, r *http.Request) {
 		DueCount: len(dueItems),
 		Due:      glanceTableData{Items: dueItems, EmptyMessage: nothingDueMessage},
 	}
-	if err := s.tpl.home.ExecuteTemplate(w, "layout", data); err != nil {
-		s.renderError(w, http.StatusInternalServerError, err)
-	}
+	s.render(w, r, s.tpl.home, data)
 }
 
 // handleDue is the workflow's entry point (SPEC.md §2 step 1) and the
@@ -79,19 +77,19 @@ func (s *Server) handleDue(w http.ResponseWriter, r *http.Request) {
 
 	items, err := s.svc.RecommendDue(ctx, topic)
 	if err != nil {
-		s.renderError(w, http.StatusInternalServerError, err)
+		s.renderError(w, r, http.StatusInternalServerError, err)
 		return
 	}
 
 	upcoming, err := s.svc.RecommendUpcoming(ctx, topic, upcomingWindowDays)
 	if err != nil {
-		s.renderError(w, http.StatusInternalServerError, err)
+		s.renderError(w, r, http.StatusInternalServerError, err)
 		return
 	}
 
 	topics, err := s.svc.ListTopics(ctx)
 	if err != nil {
-		s.renderError(w, http.StatusInternalServerError, err)
+		s.renderError(w, r, http.StatusInternalServerError, err)
 		return
 	}
 
@@ -106,28 +104,38 @@ func (s *Server) handleDue(w http.ResponseWriter, r *http.Request) {
 		data.Selected = *topic
 	}
 
-	if err := s.tpl.due.ExecuteTemplate(w, "layout", data); err != nil {
-		s.renderError(w, http.StatusInternalServerError, err)
-	}
+	s.render(w, r, s.tpl.due, data)
 }
 
 // handleGrade is the one-click grading action (SPEC.md §2 step 3): it
 // calls RecordReview, which is itself the single unified attempt+review
-// write — there's nothing else for this handler to compose.
+// write — there's nothing else for this handler to compose. Progressive
+// enhancement (FRONTEND.md, htmx grading): htmx requests get back a
+// small confirmation fragment swapped into the row in place, instead of
+// the full-page redirect a plain form submission (JS disabled, or htmx
+// failed to load) still receives.
 func (s *Server) handleGrade(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil {
-		s.renderError(w, http.StatusBadRequest, err)
+		s.renderError(w, r, http.StatusBadRequest, err)
 		return
 	}
 	if err := r.ParseForm(); err != nil {
-		s.renderError(w, http.StatusBadRequest, err)
+		s.renderError(w, r, http.StatusBadRequest, err)
 		return
 	}
 
 	grade := scheduler.Grade(r.PostForm.Get("grade"))
-	if _, err := s.svc.RecordReview(r.Context(), id, grade, time.Now()); err != nil {
-		s.renderError(w, http.StatusBadRequest, err)
+	result, err := s.svc.RecordReview(r.Context(), id, grade, time.Now())
+	if err != nil {
+		s.renderError(w, r, http.StatusBadRequest, err)
+		return
+	}
+
+	if r.Header.Get("HX-Request") == "true" {
+		if err := s.tpl.due.ExecuteTemplate(w, "graded-badge", result); err != nil {
+			s.renderError(w, r, http.StatusInternalServerError, err)
+		}
 		return
 	}
 

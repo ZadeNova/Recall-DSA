@@ -6,15 +6,15 @@
   <tr><th>Problem</th><th>Difficulty</th><th>Topics</th><th>Next Review</th><th>Grade</th></tr>
   {{range .}}
   <tr>
-    <td><a href="{{.URL}}" target="leetcode">{{.Title}}</a></td>
-    <td>{{.Difficulty}}</td>
+    <td><a class="problem-title" href="{{.URL}}" target="leetcode">{{.Title}}</a></td>
+    <td class="difficulty-{{.Difficulty}}">{{.Difficulty}}</td>
     <td>{{range .Topics}}<span class="topic-tag">{{.}}</span>{{end}}</td>
-    <td>{{.NextReviewDate.Format "2006-01-02"}}</td>
-    <td>
-      <form class="grade-form" method="post" action="/problems/{{.ID}}/grade"><button name="grade" value="Failed">Failed</button></form>
-      <form class="grade-form" method="post" action="/problems/{{.ID}}/grade"><button name="grade" value="Hard">Hard</button></form>
-      <form class="grade-form" method="post" action="/problems/{{.ID}}/grade"><button name="grade" value="Good">Good</button></form>
-      <form class="grade-form" method="post" action="/problems/{{.ID}}/grade"><button name="grade" value="Easy">Easy</button></form>
+    <td class="meta">{{.NextReviewDate.Format "2006-01-02"}}</td>
+    <td class="grade-cell">
+      <form class="grade-form" method="post" action="/problems/{{.ID}}/grade" hx-post="/problems/{{.ID}}/grade" hx-target="closest .grade-cell" hx-swap="innerHTML"><button class="grade-btn grade-btn-failed" name="grade" value="Failed">Failed</button></form>
+      <form class="grade-form" method="post" action="/problems/{{.ID}}/grade" hx-post="/problems/{{.ID}}/grade" hx-target="closest .grade-cell" hx-swap="innerHTML"><button class="grade-btn grade-btn-hard" name="grade" value="Hard">Hard</button></form>
+      <form class="grade-form" method="post" action="/problems/{{.ID}}/grade" hx-post="/problems/{{.ID}}/grade" hx-target="closest .grade-cell" hx-swap="innerHTML"><button class="grade-btn grade-btn-good" name="grade" value="Good">Good</button></form>
+      <form class="grade-form" method="post" action="/problems/{{.ID}}/grade" hx-post="/problems/{{.ID}}/grade" hx-target="closest .grade-cell" hx-swap="innerHTML"><button class="grade-btn grade-btn-easy" name="grade" value="Easy">Easy</button></form>
     </td>
   </tr>
   {{end}}

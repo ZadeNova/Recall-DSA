@@ -28,9 +28,7 @@ func splitTopics(raw string) []string {
 }
 
 func (s *Server) handleNewProblemForm(w http.ResponseWriter, r *http.Request) {
-	if err := s.tpl.addForm.ExecuteTemplate(w, "layout", problemFormData{}); err != nil {
-		s.renderError(w, http.StatusInternalServerError, err)
-	}
+	s.render(w, r, s.tpl.addForm, problemFormData{})
 }
 
 // handleCreateProblem is the "brand-new problem" half of SPEC.md §2's
@@ -38,7 +36,7 @@ func (s *Server) handleNewProblemForm(w http.ResponseWriter, r *http.Request) {
 // atomically, so there's nothing further to compose here.
 func (s *Server) handleCreateProblem(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
-		s.renderError(w, http.StatusBadRequest, err)
+		s.renderError(w, r, http.StatusBadRequest, err)
 		return
 	}
 
@@ -52,7 +50,7 @@ func (s *Server) handleCreateProblem(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if _, err := s.svc.AddProblem(r.Context(), input); err != nil {
-		s.renderFormError(w, s.tpl.addForm, problemFormData{
+		s.renderFormError(w, r, s.tpl.addForm, problemFormData{
 			Problem: service.Problem{Title: input.Title, URL: input.URL, Difficulty: input.Difficulty, Topics: input.Topics},
 			Error:   err.Error(),
 		})
@@ -65,33 +63,31 @@ func (s *Server) handleCreateProblem(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleEditProblemForm(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil {
-		s.renderError(w, http.StatusBadRequest, err)
+		s.renderError(w, r, http.StatusBadRequest, err)
 		return
 	}
 
 	problem, err := s.svc.GetProblem(r.Context(), id)
 	if errors.Is(err, sql.ErrNoRows) {
-		s.renderError(w, http.StatusNotFound, fmt.Errorf("problem %d not found", id))
+		s.renderError(w, r, http.StatusNotFound, fmt.Errorf("problem %d not found", id))
 		return
 	}
 	if err != nil {
-		s.renderError(w, http.StatusInternalServerError, err)
+		s.renderError(w, r, http.StatusInternalServerError, err)
 		return
 	}
 
-	if err := s.tpl.editForm.ExecuteTemplate(w, "layout", problemFormData{Problem: problem}); err != nil {
-		s.renderError(w, http.StatusInternalServerError, err)
-	}
+	s.render(w, r, s.tpl.editForm, problemFormData{Problem: problem})
 }
 
 func (s *Server) handleUpdateProblem(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil {
-		s.renderError(w, http.StatusBadRequest, err)
+		s.renderError(w, r, http.StatusBadRequest, err)
 		return
 	}
 	if err := r.ParseForm(); err != nil {
-		s.renderError(w, http.StatusBadRequest, err)
+		s.renderError(w, r, http.StatusBadRequest, err)
 		return
 	}
 
@@ -103,7 +99,7 @@ func (s *Server) handleUpdateProblem(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.svc.UpdateProblem(r.Context(), id, input); err != nil {
-		s.renderFormError(w, s.tpl.editForm, problemFormData{
+		s.renderFormError(w, r, s.tpl.editForm, problemFormData{
 			Problem: service.Problem{ID: id, Title: input.Title, URL: input.URL, Difficulty: input.Difficulty, Topics: input.Topics},
 			Error:   err.Error(),
 		})
@@ -118,11 +114,11 @@ func (s *Server) handleUpdateProblem(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleDeleteProblem(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil {
-		s.renderError(w, http.StatusBadRequest, err)
+		s.renderError(w, r, http.StatusBadRequest, err)
 		return
 	}
 	if err := s.svc.DeleteProblem(r.Context(), id); err != nil {
-		s.renderError(w, http.StatusInternalServerError, err)
+		s.renderError(w, r, http.StatusInternalServerError, err)
 		return
 	}
 	http.Redirect(w, r, "/library", http.StatusSeeOther)

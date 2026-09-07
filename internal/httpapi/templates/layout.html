@@ -1,6 +1,6 @@
 {{define "layout"}}
 <!doctype html>
-<html>
+<html data-theme="{{.Theme}}">
 <head>
 <meta charset="utf-8">
 <title>Recall-DSA</title>
@@ -25,47 +25,159 @@
     font-display: swap;
   }
 
-  /* Placeholder design tokens — FRONTEND.md "Visual identity" is TBD.
-     These are deliberately unremarkable defaults; structure (this file
-     and templates/partials) reference the tokens, not literal colors, so
-     real values can be swapped in one place later without touching any
-     page template. See FRONTEND.md's "Deferral strategy". */
+  /* Three themes (FRONTEND.md, Visual identity): Rose Pine Dawn (light,
+     default), Rose Pine Moon (dark), Nord (custom). Two-tier tokens:
+     --color-* is the raw palette, swapped wholesale per [data-theme];
+     the semantic tokens below (--bg, --danger, --grade-hard, ...) are
+     defined ONCE, unconditionally, and just point at --color-* — so
+     component CSS never needs to change when a theme is added/switched. */
   :root {
-    --bg: #fff;
-    --text: #222;
-    --muted-bg: #f5f5f5;
-    --muted-text: #666;
-    --accent: #0057b3;
-    --danger: #b00020;
-    --border: #ddd;
+    /* Rose Pine Dawn — default light palette */
+    --color-base: #faf4ed;
+    --color-surface: #fffaf3;
+    --color-overlay: #f2e9e1;
+    --color-muted: #9893a5;
+    --color-subtle: #797593;
+    --color-text: #464261;
+    --color-love: #b4637a;
+    --color-gold: #ea9d34;
+    --color-rose: #d7827e;
+    --color-pine: #286983;
+    --color-foam: #56949f;
+    --color-iris: #907aa9;
+    --color-highlight-low: #f4ede8;
+    --color-highlight-med: #dfdad9;
+    --color-highlight-high: #cecacd;
+
+    /* Semantic layer — stable purpose-names component CSS references. */
+    --bg: var(--color-base);
+    --surface-bg: var(--color-surface);
+    --text: var(--color-text);
+    --muted-text: var(--color-subtle);
+    --border: var(--color-highlight-med);
+    --link: var(--color-pine);
+    --danger: var(--color-love);
+    --tag-bg: var(--color-highlight-low);
+    --tag-accent: var(--color-iris);
+    --grade-failed: var(--color-love);
+    --grade-hard: var(--color-gold);
+    --grade-good: var(--color-pine);
+    --grade-easy: var(--color-foam);
+    --difficulty-easy: var(--color-foam);
+    --difficulty-medium: var(--color-gold);
+    --difficulty-hard: var(--color-rose);
 
     --font-sans: "IBM Plex Sans", system-ui, sans-serif;
     --font-mono: "IBM Plex Mono", ui-monospace, monospace;
   }
 
-  body { font-family: var(--font-sans); max-width: 900px; margin: 2rem auto; padding: 0 1rem; background: var(--bg); color: var(--text); }
-  nav a { margin-right: 1rem; }
+  [data-theme="dark"] {
+    /* Rose Pine Moon */
+    --color-base: #232136;
+    --color-surface: #2a273f;
+    --color-overlay: #393552;
+    --color-muted: #6e6a86;
+    --color-subtle: #908caa;
+    --color-text: #e0def4;
+    --color-love: #eb6f92;
+    --color-gold: #f6c177;
+    --color-rose: #ea9a97;
+    --color-pine: #3e8fb0;
+    --color-foam: #9ccfd8;
+    --color-iris: #c4a7e7;
+    --color-highlight-low: #2a283e;
+    --color-highlight-med: #44415a;
+    --color-highlight-high: #56526e;
+  }
+
+  [data-theme="nord"] {
+    /* Nord — nord0-3 (Polar Night), nord4/nord6 (Snow Storm), nord8-10
+       (Frost), nord11-13/nord15 (Aurora). Sourced from nordtheme.com;
+       mapped onto Rose Pine's role shape since Nord has no native names
+       for these roles (FRONTEND.md, Visual identity). */
+    --color-base: #2e3440;
+    --color-surface: #3b4252;
+    --color-overlay: #434c5e;
+    --color-muted: #4c566a;
+    --color-subtle: #d8dee9;
+    --color-text: #eceff4;
+    --color-love: #bf616a;
+    --color-gold: #ebcb8b;
+    --color-rose: #d08770;
+    --color-pine: #5e81ac;
+    --color-foam: #88c0d0;
+    --color-iris: #b48ead;
+    --color-highlight-low: #3b4252;
+    --color-highlight-med: #4c566a;
+    --color-highlight-high: #81a1c1;
+  }
+
+  /* Typography (FRONTEND.md): restrained scale, IBM Plex Sans primary,
+     IBM Plex Mono only for code/URLs/slugs/technical identifiers. Do
+     not add sizes/weights beyond what's listed there. */
+  body { font-family: var(--font-sans); font-size: 15px; font-weight: 400; line-height: 1.5; max-width: 900px; margin: 2rem auto; padding: 0 1rem; background: var(--bg); color: var(--text); }
+  input, select, textarea { font-family: inherit; font-size: 15px; }
+  input[type="text"], select { padding: 0.35rem 0.5rem; border: 1px solid var(--border); border-radius: 4px; background: var(--surface-bg); color: var(--text); }
+  /* Base button look — every plain <button> gets this; more specific
+     classes (.grade-btn, .theme-switcher a) have higher CSS specificity
+     and override it where they need their own colors. */
+  button { font-family: inherit; font-size: 15px; font-weight: 500; background: var(--link); color: var(--color-base); border: none; border-radius: 4px; padding: 0.4rem 0.9rem; cursor: pointer; }
+  button:hover { filter: brightness(1.1); }
+  button.btn-danger { background: var(--danger); }
+  a.btn-link { display: inline-block; background: var(--link); color: var(--color-base); border-radius: 4px; padding: 0.4rem 0.9rem; text-decoration: none; font-weight: 500; }
+  a.btn-link:hover { filter: brightness(1.1); }
+  h1 { font-size: 28px; font-weight: 600; line-height: 1.25; margin: 0 0 0.5rem; }
+  h2 { font-size: 20px; font-weight: 600; line-height: 1.25; margin: 1.5rem 0 0.5rem; }
+  th, label { font-size: 12px; font-weight: 500; }
+  .problem-title { font-size: 16px; font-weight: 500; }
+  .meta { font-size: 13px; font-weight: 400; }
+  code, .mono { font-family: var(--font-mono); }
+
+  a { color: var(--link); }
+  nav { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.5rem; padding-bottom: 0.75rem; margin-bottom: 0.75rem; border-bottom: 1px solid var(--border); }
+  .nav-links a { display: inline-block; margin-right: 0.25rem; padding: 0.35rem 0.7rem; border-radius: 4px; color: var(--text); text-decoration: none; font-weight: 500; }
+  .nav-links a:hover { background: var(--surface-bg); }
+  .nav-links a.nav-active { background: var(--tag-bg); color: var(--link); }
+  .due-pill { display: inline-block; margin-right: 0.6rem; padding: 0.2rem 0.6rem; border-radius: 999px; background: var(--tag-bg); color: var(--link); font-size: 13px; font-weight: 500; text-decoration: none; }
+  .due-pill:hover { filter: brightness(1.1); }
+  .theme-switcher a { margin-right: 0.6rem; padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 13px; color: var(--muted-text); text-decoration: none; }
+  .theme-switcher a:hover { background: var(--surface-bg); }
+  .theme-switcher a.theme-active { color: var(--link); font-weight: 600; background: var(--tag-bg); }
   table { border-collapse: collapse; width: 100%; margin-top: 1rem; }
   th, td { text-align: left; padding: 0.4rem 0.6rem; border-bottom: 1px solid var(--border); vertical-align: top; }
   form.grade-form { display: inline; margin-right: 0.3rem; }
-  .topic-tag { display: inline-block; background: var(--muted-bg); border-radius: 4px; padding: 0.1rem 0.5rem; margin: 0 0.2rem 0.2rem 0; font-size: 0.85em; }
-  code, .mono { font-family: var(--font-mono); }
+  .grade-btn { border: none; border-radius: 4px; padding: 0.25rem 0.55rem; color: var(--color-base); cursor: pointer; font-size: 13px; font-weight: 500; }
+  .grade-btn-failed { background: var(--grade-failed); }
+  .grade-btn-hard { background: var(--grade-hard); }
+  .grade-btn-good { background: var(--grade-good); }
+  .grade-btn-easy { background: var(--grade-easy); }
+  .difficulty-Easy { color: var(--difficulty-easy); font-size: 12px; font-weight: 500; }
+  .difficulty-Medium { color: var(--difficulty-medium); font-size: 12px; font-weight: 500; }
+  .difficulty-Hard { color: var(--difficulty-hard); font-size: 12px; font-weight: 500; }
+  .topic-tag { display: inline-block; background: var(--tag-bg); color: var(--tag-accent); border-radius: 4px; padding: 0.1rem 0.5rem; margin: 0 0.2rem 0.2rem 0; font-size: 12px; font-weight: 500; }
   .error { color: var(--danger); }
-  .muted-section { background: var(--muted-bg); color: var(--muted-text); padding: 0.75rem 1rem; border-radius: 4px; margin-top: 1rem; }
+  .muted-section { background: var(--surface-bg); color: var(--muted-text); font-size: 13px; padding: 0.75rem 1rem; border-radius: 4px; margin-top: 1rem; }
   .muted-section table { margin-top: 0.5rem; }
   .muted-section th, .muted-section td { border-bottom: 1px solid var(--border); color: var(--muted-text); }
 </style>
 </head>
 <body>
 <nav>
-  <a href="/">Home</a>
-  <a href="/due">Due</a>
-  <a href="/library">Library</a>
-  <a href="/problems/new">Add Problem</a>
-  <a href="/topics">Topics</a>
+  <span class="nav-links">
+    <a href="/" class="{{if eq .Active "home"}}nav-active{{end}}">Home</a>
+    <a href="/due" class="{{if eq .Active "due"}}nav-active{{end}}">Due</a>
+    <a href="/library" class="{{if eq .Active "library"}}nav-active{{end}}">Library</a>
+    <a href="/problems/new" class="{{if eq .Active "add"}}nav-active{{end}}">Add Problem</a>
+    <a href="/topics" class="{{if eq .Active "topics"}}nav-active{{end}}">Topics</a>
+  </span>
+  <a href="/due" class="due-pill">{{.DueCount}} due today</a>
+  <span class="theme-switcher">
+    <a href="/theme/light" class="{{if eq .Theme "light"}}theme-active{{end}}">Light</a>
+    <a href="/theme/dark" class="{{if eq .Theme "dark"}}theme-active{{end}}">Dark</a>
+    <a href="/theme/nord" class="{{if eq .Theme "nord"}}theme-active{{end}}">Nord</a>
+  </span>
 </nav>
-<hr>
-{{template "content" .}}
+{{template "content" .Page}}
 </body>
 </html>
 {{end}}

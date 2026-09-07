@@ -38,21 +38,19 @@ func (s *Server) handleLibrary(w http.ResponseWriter, r *http.Request) {
 
 	problems, err := s.svc.ListProblems(ctx, filter)
 	if err != nil {
-		s.renderError(w, http.StatusInternalServerError, err)
+		s.renderError(w, r, http.StatusInternalServerError, err)
 		return
 	}
 	data.Problems = problems
 
 	topics, err := s.svc.ListTopics(ctx)
 	if err != nil {
-		s.renderError(w, http.StatusInternalServerError, err)
+		s.renderError(w, r, http.StatusInternalServerError, err)
 		return
 	}
 	for _, t := range topics {
 		data.Topics = append(data.Topics, t.Name)
 	}
 
-	if err := s.tpl.library.ExecuteTemplate(w, "layout", data); err != nil {
-		s.renderError(w, http.StatusInternalServerError, err)
-	}
+	s.render(w, r, s.tpl.library, data)
 }

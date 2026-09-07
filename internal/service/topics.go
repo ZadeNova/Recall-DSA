@@ -24,6 +24,40 @@ func (s *Service) ListTopics(ctx context.Context) ([]Topic, error) {
 	return topics, rows.Err()
 }
 
+// TopicCount is a topic alongside how many problems currently carry it —
+// the Topics page's "Active Problems" column and Topic Distribution
+// section.
+type TopicCount struct {
+	Topic
+	Count int
+}
+
+// TopicCounts returns every topic with its problem count, alphabetically
+// by name. LEFT JOIN so a topic with zero problems still appears with
+// Count 0, rather than being dropped.
+func (s *Service) TopicCounts(ctx context.Context) ([]TopicCount, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT t.id, t.name, COUNT(pt.problem_id)
+		FROM topics t
+		LEFT JOIN problem_topics pt ON pt.topic_id = t.id
+		GROUP BY t.id
+		ORDER BY t.name`)
+	if err != nil {
+		return nil, fmt.Errorf("service: topic counts: %w", err)
+	}
+	defer rows.Close()
+
+	var counts []TopicCount
+	for rows.Next() {
+		var tc TopicCount
+		if err := rows.Scan(&tc.ID, &tc.Name, &tc.Count); err != nil {
+			return nil, fmt.Errorf("service: scan topic count: %w", err)
+		}
+		counts = append(counts, tc)
+	}
+	return counts, rows.Err()
+}
+
 // CreateTopic adds a new topic tag (SPEC.md §8). The name-uniqueness
 // check is case-insensitive at the database level (topics.name COLLATE
 // NOCASE), so a duplicate under different casing surfaces here as an

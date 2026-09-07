@@ -2,28 +2,59 @@
 <h1>Topics</h1>
 {{if .Error}}<p class="error">{{.Error}}</p>{{end}}
 
+<div class="stats-row">
+  <div class="stat-card">
+    <span class="meta">Total Topics</span>
+    <div class="stat-number">{{.TotalTopics}}</div>
+  </div>
+  <div class="stat-card">
+    <span class="meta">Mapped Problems</span>
+    <div class="stat-number">{{.TotalMapped}}</div>
+  </div>
+</div>
+
 <form method="post" action="/topics">
   <input type="text" name="name" placeholder="New topic name" required>
   <button type="submit">Create</button>
 </form>
 
 <table>
-  <tr><th>Name</th><th>Rename</th><th>Delete</th></tr>
+  <tr><th>Name</th><th>Active Problems</th><th>Rename</th><th>Actions</th></tr>
   {{range .Topics}}
   <tr>
     <td>{{.Name}}</td>
     <td>
+      <span class="meta">{{.Count}} problem{{if ne .Count 1}}s{{end}}</span>
+      <span class="topic-count-bar"><span class="topic-count-bar-fill" style="width: {{printf "%.1f" .BarPercent}}%"></span></span>
+    </td>
+    <td>
       <form method="post" action="/topics/{{.ID}}/rename">
         <input type="text" name="name" value="{{.Name}}">
-        <button type="submit">Rename</button>
+        <button type="submit">Save</button>
       </form>
     </td>
     <td>
       <form method="post" action="/topics/{{.ID}}/delete" onsubmit="return confirm('Delete this topic? Problems keep their other tags.');">
-        <button type="submit">Delete</button>
+        <button type="submit" class="btn-danger">Delete</button>
       </form>
     </td>
   </tr>
   {{end}}
 </table>
+
+<p class="muted-section">Deleting a topic does not erase problem history; problems become tagged as uncategorized.</p>
+
+{{if .TopicsByCount}}
+<h2>Topic Distribution</h2>
+<p class="meta">Share of tagged problems per topic.</p>
+{{range .TopicsByCount}}
+<div class="distribution-row">
+  <div class="distribution-row-header">
+    <span>{{.Name}}</span>
+    <span class="meta">{{.Count}} ({{printf "%.1f" .Percent}}%)</span>
+  </div>
+  <span class="topic-count-bar"><span class="topic-count-bar-fill" style="width: {{printf "%.1f" .Percent}}%"></span></span>
+</div>
+{{end}}
+{{end}}
 {{end}}

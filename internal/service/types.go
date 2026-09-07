@@ -87,4 +87,11 @@ type UpdateProblemInput struct {
 type ListProblemsFilter struct {
 	Topic      *string
 	Difficulty *Difficulty
+
+	// Search, Sort, Limit, and Offset are used only by ListLibrary — the
+	// paginated, SRS-aware view. ListProblems ignores them.
+	Search *string
+	Sort   string // "next_review" (default), "title", or "difficulty"
+	Limit  int
+	Offset int
 }

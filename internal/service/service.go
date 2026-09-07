@@ -61,3 +61,13 @@ func (s *Service) withTx(ctx context.Context, fn func(*sql.Tx) error) error {
 func (s *Service) today() string {
 	return s.now().In(s.loc).Format("2006-01-02")
 }
+
+// Today is today's calendar date at midnight in the service's
+// configured timezone — exported so callers outside the package (e.g.
+// the Library page, computing a day-offset display against
+// DueItem.NextReviewDate) can do date math without duplicating the
+// timezone handling that already lives here.
+func (s *Service) Today() time.Time {
+	now := s.now().In(s.loc)
+	return time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, s.loc)
+}

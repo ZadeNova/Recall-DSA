@@ -321,6 +321,113 @@ func TestCreateProblem_InvalidInputReRendersFormWithError(t *testing.T) {
 	}
 }
 
+func TestLibrary_SearchFiltersByTitle(t *testing.T) {
+	h, svc := newTestServer(t)
+	ctx := t.Context()
+
+	mustAdd := func(title, slug string) {
+		t.Helper()
+		if _, err := svc.AddProblem(ctx, service.AddProblemInput{
+			Title: title, URL: slug, Difficulty: service.DifficultyEasy,
+			Grade: "Good", At: time.Now(),
+		}); err != nil {
+			t.Fatalf("AddProblem(%s): unexpected err: %v", title, err)
+		}
+	}
+	mustAdd("Two Sum", "two-sum")
+	mustAdd("Climbing Stairs", "climbing-stairs")
+
+	rec := doGet(t, h, "/library?q=Sum")
+	body := rec.Body.String()
+	if !strings.Contains(body, "Two Sum") {
+		t.Errorf("search for %q should match Two Sum:\n%s", "Sum", body)
+	}
+	if strings.Contains(body, "Climbing Stairs") {
+		t.Errorf("search for %q should not match Climbing Stairs:\n%s", "Sum", body)
+	}
+}
+
+func TestLibrary_ShowsIntervalAndStatusColumns(t *testing.T) {
+	h, svc := newTestServer(t)
+	ctx := t.Context()
+
+	if _, err := svc.AddProblem(ctx, service.AddProblemInput{
+		Title: "Two Sum", URL: "two-sum", Difficulty: service.DifficultyEasy,
+		Grade: "Failed", At: time.Now(),
+	}); err != nil {
+		t.Fatalf("AddProblem: unexpected err: %v", err)
+	}
+
+	body := doGet(t, h, "/library").Body.String()
+	if !strings.Contains(body, "1 days") {
+		t.Errorf("library should show the Failed grade's 1-day interval:\n%s", body)
+	}
+	// A fresh Failed sets IntervalDays=1, so next_review_date is
+	// tomorrow, not today (internal/service/reviews.go's recordReview:
+	// next_review_date = at + IntervalDays).
+	if !strings.Contains(body, "Tomorrow") {
+		t.Errorf("a fresh Failed grade is due tomorrow, want a \"Tomorrow\" status:\n%s", body)
+	}
+}
+
+func TestLibrary_PaginationRespectsPageSize(t *testing.T) {
+	h, svc := newTestServer(t)
+	ctx := t.Context()
+
+	const total = 15
+	for i := 0; i < total; i++ {
+		title := "Problem " + strconv.Itoa(i)
+		if _, err := svc.AddProblem(ctx, service.AddProblemInput{
+			Title: title, URL: "problem-" + strconv.Itoa(i), Difficulty: service.DifficultyEasy,
+			Grade: "Good", At: time.Now(),
+		}); err != nil {
+			t.Fatalf("AddProblem(%s): unexpected err: %v", title, err)
+		}
+	}
+
+	rec := doGet(t, h, "/library?page_size=50&sort=title")
+	body := rec.Body.String()
+	if !strings.Contains(body, "Showing 1-15 of 15 problems") {
+		t.Errorf("expected all 15 problems on one page:\n%s", body)
+	}
+	if strings.Contains(body, `>Next &raquo;</a>`) {
+		t.Errorf("only page should not show a Next link:\n%s", body)
+	}
+
+	rec = doGet(t, h, "/library?page_size=10&page=1&sort=title")
+	body = rec.Body.String()
+	if !strings.Contains(body, "Showing 1-10 of 15 problems") {
+		t.Errorf("page 1 of size 10 should show 1-10 of 15:\n%s", body)
+	}
+	if !strings.Contains(body, `>Next &raquo;</a>`) {
+		t.Errorf("page 1 of 2 should show a Next link:\n%s", body)
+	}
+	if strings.Contains(body, `&laquo; Prev</a>`) {
+		t.Errorf("page 1 should not show a Prev link:\n%s", body)
+	}
+
+	rec = doGet(t, h, "/library?page_size=10&page=2&sort=title")
+	body = rec.Body.String()
+	if !strings.Contains(body, "Showing 11-15 of 15 problems") {
+		t.Errorf("page 2 of size 10 should show 11-15 of 15:\n%s", body)
+	}
+	if !strings.Contains(body, `&laquo; Prev</a>`) {
+		t.Errorf("page 2 should show a Prev link:\n%s", body)
+	}
+	if strings.Contains(body, `>Next &raquo;</a>`) {
+		t.Errorf("last page should not show a Next link:\n%s", body)
+	}
+
+	// A page number beyond the last one (e.g. a stale link after
+	// deletions) should clamp to the last page rather than showing a
+	// nonsensical range.
+	rec = doGet(t, h, "/library?page_size=10&page=99&sort=title")
+	body = rec.Body.String()
+	if !strings.Contains(body, "Showing 11-15 of 15 problems") {
+		t.Errorf("out-of-range page should clamp to the last page:\n%s", body)
+	}
+}
+
 func TestEditProblem_PrefillsFormAndUpdatePersists(t *testing.T) {
 	h, svc := newTestServer(t)
 	ctx := t.Context()

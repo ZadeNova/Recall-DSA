@@ -196,6 +196,14 @@
   .grade-card-good .grade-card-name { color: var(--grade-good); }
   .grade-card-easy:has(input:checked) { border-color: var(--grade-easy); background: var(--tag-bg); }
   .grade-card-easy .grade-card-name { color: var(--grade-easy); }
+  .library-toolbar { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; margin: 1rem 0; }
+  .library-toolbar input[type="text"] { flex: 1; min-width: 200px; }
+  .status-overdue { color: var(--danger); font-size: 13px; font-weight: 500; }
+  .status-due-today { color: var(--link); font-size: 13px; font-weight: 500; }
+  .status-upcoming { color: var(--muted-text); font-size: 13px; }
+  .pagination { display: flex; justify-content: space-between; align-items: center; margin-top: 1rem; }
+  .pagination-controls { display: flex; align-items: center; gap: 0.75rem; }
+  .page-size-form { display: inline; }
   .error { color: var(--danger); }
   .muted-section { background: var(--surface-bg); color: var(--muted-text); font-size: 13px; padding: 0.75rem 1rem; border-radius: 4px; margin-top: 1rem; }
   .muted-section table { margin-top: 0.5rem; }

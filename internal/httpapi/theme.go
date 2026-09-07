@@ -96,6 +96,17 @@ func (s *Server) handleSetTheme(w http.ResponseWriter, r *http.Request) {
 		MaxAge: 365 * 24 * 60 * 60,
 	})
 
+	// The live theme-switcher script (layout.html) sets this header when
+	// it's already toggled data-theme on the page directly — a redirect
+	// would tear down and rebuild the page it just live-updated, which
+	// is exactly the reload-driven "shake" this exists to avoid. A
+	// plain <a href> click (JS disabled) never sends it, so that path
+	// keeps working via the redirect below.
+	if r.Header.Get("X-Theme-Live") == "true" {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
 	redirect := r.Referer()
 	if redirect == "" {
 		redirect = "/"

@@ -208,6 +208,39 @@
   .muted-section { background: var(--surface-bg); color: var(--muted-text); font-size: 13px; padding: 0.75rem 1rem; border-radius: 4px; margin-top: 1rem; }
   .muted-section table { margin-top: 0.5rem; }
   .muted-section th, .muted-section td { border-bottom: 1px solid var(--border); color: var(--muted-text); }
+
+  /* Motion — a restrained, consistent set of transitions (theme fade,
+     hover feedback, htmx grade-confirmation fade-in, one-time bar
+     grow-in), all gated behind prefers-reduced-motion so motion-
+     sensitive visitors get today's instant behavior instead. */
+  @media (prefers-reduced-motion: no-preference) {
+    /* Theme switch cross-fade: every themed color property eases
+       instead of snapping when [data-theme] changes. */
+    body, body * {
+      transition: background-color 1s ease, color 1s ease, border-color 1s ease, fill 1s ease;
+    }
+
+    /* Hover feedback — quicker than the theme fade so hovering still
+       feels responsive, not sluggish. */
+    button, a.btn-link, .due-pill, .nav-links a, .theme-switcher a, .grade-btn {
+      transition: filter 0.25s ease, background-color 0.25s ease;
+    }
+
+    /* htmx grade-confirmation fade-in: htmx's own swap/settle timing
+       (see due-table.html's hx-swap) toggles the htmx-swapping class,
+       which this fades out from/into rather than popping instantly. */
+    .grade-cell { transition: opacity 0.2s ease; }
+    .grade-cell.htmx-swapping { opacity: 0; }
+
+    /* Topic bar grow-in on page load — the fill's target width is
+       already set inline per bar (style="width: X%"); the keyframe
+       only needs to specify the starting width, so it animates up to
+       whatever value the template rendered. */
+    @keyframes grow-bar {
+      from { width: 0; }
+    }
+    .topic-count-bar-fill { animation: grow-bar 0.6s ease-out; }
+  }
 </style>
 </head>
 <body>
@@ -221,11 +254,29 @@
   </span>
   <a href="/due" class="due-pill">{{.DueCount}} due today</a>
   <span class="theme-switcher">
-    <a href="/theme/light" class="{{if eq .Theme "light"}}theme-active{{end}}">Light</a>
-    <a href="/theme/dark" class="{{if eq .Theme "dark"}}theme-active{{end}}">Dark</a>
-    <a href="/theme/nord" class="{{if eq .Theme "nord"}}theme-active{{end}}">Nord</a>
+    <a href="/theme/light" data-theme="light" class="{{if eq .Theme "light"}}theme-active{{end}}">Light</a>
+    <a href="/theme/dark" data-theme="dark" class="{{if eq .Theme "dark"}}theme-active{{end}}">Dark</a>
+    <a href="/theme/nord" data-theme="nord" class="{{if eq .Theme "nord"}}theme-active{{end}}">Nord</a>
   </span>
 </nav>
+<script>
+  // Switch themes live (no page reload) so the CSS color transition has
+  // something to actually fade from — a full-page redirect tears the
+  // page down and rebuilds it, which produces a page-load jitter, not a
+  // cross-fade. The cookie is still persisted server-side in the
+  // background so the next real navigation opens in the right theme.
+  document.querySelectorAll(".theme-switcher a").forEach(function (link) {
+    link.addEventListener("click", function (e) {
+      e.preventDefault();
+      var theme = link.dataset.theme;
+      document.documentElement.setAttribute("data-theme", theme);
+      document.querySelectorAll(".theme-switcher a").forEach(function (x) {
+        x.classList.toggle("theme-active", x === link);
+      });
+      fetch(link.href, { headers: { "X-Theme-Live": "true" } }).catch(function () {});
+    });
+  });
+</script>
 {{template "content" .Page}}
 </body>
 </html>

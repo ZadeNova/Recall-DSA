@@ -11,10 +11,10 @@
     <td>{{range .Topics}}<span class="topic-tag">{{.}}</span>{{end}}</td>
     <td class="meta">{{.NextReviewDate.Format "2006-01-02"}}</td>
     <td class="grade-cell">
-      <form class="grade-form" method="post" action="/problems/{{.ID}}/grade" hx-post="/problems/{{.ID}}/grade" hx-target="closest .grade-cell" hx-swap="innerHTML"><button class="grade-btn grade-btn-failed" name="grade" value="Failed">Failed</button></form>
-      <form class="grade-form" method="post" action="/problems/{{.ID}}/grade" hx-post="/problems/{{.ID}}/grade" hx-target="closest .grade-cell" hx-swap="innerHTML"><button class="grade-btn grade-btn-hard" name="grade" value="Hard">Hard</button></form>
-      <form class="grade-form" method="post" action="/problems/{{.ID}}/grade" hx-post="/problems/{{.ID}}/grade" hx-target="closest .grade-cell" hx-swap="innerHTML"><button class="grade-btn grade-btn-good" name="grade" value="Good">Good</button></form>
-      <form class="grade-form" method="post" action="/problems/{{.ID}}/grade" hx-post="/problems/{{.ID}}/grade" hx-target="closest .grade-cell" hx-swap="innerHTML"><button class="grade-btn grade-btn-easy" name="grade" value="Easy">Easy</button></form>
+      <form class="grade-form" method="post" action="/problems/{{.ID}}/grade" hx-post="/problems/{{.ID}}/grade" hx-target="closest .grade-cell" hx-swap="innerHTML swap:0.2s settle:0.2s"><button class="grade-btn grade-btn-failed" name="grade" value="Failed">Failed</button></form>
+      <form class="grade-form" method="post" action="/problems/{{.ID}}/grade" hx-post="/problems/{{.ID}}/grade" hx-target="closest .grade-cell" hx-swap="innerHTML swap:0.2s settle:0.2s"><button class="grade-btn grade-btn-hard" name="grade" value="Hard">Hard</button></form>
+      <form class="grade-form" method="post" action="/problems/{{.ID}}/grade" hx-post="/problems/{{.ID}}/grade" hx-target="closest .grade-cell" hx-swap="innerHTML swap:0.2s settle:0.2s"><button class="grade-btn grade-btn-good" name="grade" value="Good">Good</button></form>
+      <form class="grade-form" method="post" action="/problems/{{.ID}}/grade" hx-post="/problems/{{.ID}}/grade" hx-target="closest .grade-cell" hx-swap="innerHTML swap:0.2s settle:0.2s"><button class="grade-btn grade-btn-easy" name="grade" value="Easy">Easy</button></form>
     </td>
   </tr>
   {{end}}

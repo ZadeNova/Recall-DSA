@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/ZadeNova/recall-dsa/internal/scheduler"
@@ -39,7 +40,7 @@ func (s *Service) RecordReview(ctx context.Context, problemID int64, grade sched
 		if err := recordAttempt(ctx, tx, problemID, grade, at); err != nil {
 			return err
 		}
-		rs, err := recordReview(ctx, tx, s.loc, problemID, grade, at)
+		rs, err := recordReview(ctx, tx, s.loc, problemID, grade, at, nil)
 		if err != nil {
 			return err
 		}
@@ -54,7 +55,12 @@ func (s *Service) RecordReview(ctx context.Context, problemID int64, grade sched
 // It deliberately does not log the attempt itself — every caller in this
 // project needs both together, so that composition lives in
 // RecordReview/AddProblem, not duplicated here.
-func recordReview(ctx context.Context, q querier, loc *time.Location, problemID int64, grade scheduler.Grade, at time.Time) (ReviewState, error) {
+//
+// nextReviewDateOverride, if non-nil, replaces the normally-computed
+// at+interval date. Bulk import uses this to stagger initial review dates
+// across ~2 weeks (SPEC.md §9) while still logging every row's attempt as
+// graded "now" — the schedule is spread, not the audit trail.
+func recordReview(ctx context.Context, q querier, loc *time.Location, problemID int64, grade scheduler.Grade, at time.Time, nextReviewDateOverride *time.Time) (ReviewState, error) {
 	current, err := loadReviewState(ctx, q, problemID)
 	if err != nil {
 		return ReviewState{}, err
@@ -66,6 +72,9 @@ func recordReview(ctx context.Context, q querier, loc *time.Location, problemID 
 	}
 
 	nextReviewDate := at.In(loc).AddDate(0, 0, next.IntervalDays)
+	if nextReviewDateOverride != nil {
+		nextReviewDate = *nextReviewDateOverride
+	}
 	lastReviewedAt := at.UTC()
 
 	_, err = q.ExecContext(ctx, `
@@ -111,60 +120,73 @@ func loadReviewState(ctx context.Context, q querier, problemID int64) (scheduler
 
 // RecommendDue is the entire recommendation engine (SPEC.md §4): due
 // review_state rows, most overdue first, optionally filtered to one
-// topic. "Today" is computed in the service's configured timezone, not
-// the host clock's.
-func (s *Service) RecommendDue(ctx context.Context, topic *string) ([]DueItem, error) {
-	query := `
-		SELECT p.id, p.title, p.url, p.difficulty, p.slug,
-		       rs.ease_factor, rs.interval_days, rs.repetitions,
-		       rs.next_review_date, rs.last_grade, rs.last_reviewed_at
-		FROM review_state rs
-		JOIN problems p ON p.id = rs.problem_id`
-	query, args := appendTopicJoin(query, nil, topic)
+// topic, paginated. "Today" is computed in the service's configured
+// timezone, not the host clock's. Returns the requested page plus the
+// total count matching the filter (ignoring limit/offset), for
+// pagination controls and for stats that need the true total.
+func (s *Service) RecommendDue(ctx context.Context, topic *string, limit, offset int) ([]DueItem, int, error) {
+	from := `FROM review_state rs JOIN problems p ON p.id = rs.problem_id`
+	from, args := appendTopicJoin(from, nil, topic)
 
-	query += `
-		WHERE rs.next_review_date <= ?
-		ORDER BY rs.next_review_date ASC`
+	where := ` WHERE rs.next_review_date <= ?`
 	args = append(args, s.today())
 
-	rows, err := s.db.QueryContext(ctx, query, args...)
-	if err != nil {
-		return nil, fmt.Errorf("service: recommend due: %w", err)
-	}
-	defer rows.Close()
-
-	return s.scanReviewItems(ctx, rows)
+	return s.queryReviewItems(ctx, from, where, "rs.next_review_date ASC", args, limit, offset)
 }
 
 // RecommendUpcoming returns problems due after today but within the next
 // `days` days, soonest first, optionally filtered to one topic (matching
 // RecommendDue's filter, so a single topic selection can drive both
-// sections of the /due page together) — a read-only glance ahead, not a
-// recommendation: SPEC.md §4's due-query (RecommendDue) is the only thing
-// that decides what's actionable right now.
-func (s *Service) RecommendUpcoming(ctx context.Context, topic *string, days int) ([]DueItem, error) {
+// sections of the /due page together) and paginated — a read-only
+// glance ahead, not a recommendation: SPEC.md §4's due-query
+// (RecommendDue) is the only thing that decides what's actionable right
+// now. Returns the requested page plus the total count matching the
+// filter (ignoring limit/offset).
+func (s *Service) RecommendUpcoming(ctx context.Context, topic *string, days, limit, offset int) ([]DueItem, int, error) {
 	horizon := s.now().In(s.loc).AddDate(0, 0, days).Format("2006-01-02")
 
-	query := `
-		SELECT p.id, p.title, p.url, p.difficulty, p.slug,
-		       rs.ease_factor, rs.interval_days, rs.repetitions,
-		       rs.next_review_date, rs.last_grade, rs.last_reviewed_at
-		FROM review_state rs
-		JOIN problems p ON p.id = rs.problem_id`
-	query, args := appendTopicJoin(query, nil, topic)
+	from := `FROM review_state rs JOIN problems p ON p.id = rs.problem_id`
+	from, args := appendTopicJoin(from, nil, topic)
 
-	query += `
-		WHERE rs.next_review_date > ? AND rs.next_review_date <= ?
-		ORDER BY rs.next_review_date ASC`
+	where := ` WHERE rs.next_review_date > ? AND rs.next_review_date <= ?`
 	args = append(args, s.today(), horizon)
 
-	rows, err := s.db.QueryContext(ctx, query, args...)
+	return s.queryReviewItems(ctx, from, where, "rs.next_review_date ASC", args, limit, offset)
+}
+
+// queryReviewItems is the query shape shared by RecommendDue,
+// RecommendUpcoming, and ListLibrary (internal/service/library.go): a
+// COUNT(DISTINCT p.id) for the total, then the same 11-column paginated
+// SELECT against review_state JOIN problems, scanned via
+// scanReviewItems. Only from/where/orderBy differ between callers —
+// collapsing the rest into one place means the column list (and its
+// correspondence to scanReviewItems's Scan args) exists exactly once,
+// instead of three copies that could silently drift out of sync with
+// each other and with the scan.
+func (s *Service) queryReviewItems(ctx context.Context, from, where, orderBy string, args []any, limit, offset int) ([]DueItem, int, error) {
+	var total int
+	countQuery := `SELECT COUNT(DISTINCT p.id) ` + from + where
+	if err := s.db.QueryRowContext(ctx, countQuery, args...).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("service: count review items: %w", err)
+	}
+
+	query := `SELECT p.id, p.title, p.url, p.difficulty, p.slug,
+		       rs.ease_factor, rs.interval_days, rs.repetitions,
+		       rs.next_review_date, rs.last_grade, rs.last_reviewed_at ` +
+		from + where + ` ORDER BY ` + orderBy + ` LIMIT ? OFFSET ?`
+	pageArgs := append(append([]any{}, args...), limit, offset)
+
+	rows, err := s.db.QueryContext(ctx, query, pageArgs...)
 	if err != nil {
-		return nil, fmt.Errorf("service: recommend upcoming: %w", err)
+		return nil, 0, fmt.Errorf("service: query review items: %w", err)
 	}
 	defer rows.Close()
 
-	return s.scanReviewItems(ctx, rows)
+	items, err := s.scanReviewItems(ctx, rows)
+	if err != nil {
+		return nil, 0, err
+	}
+	return items, total, nil
 }
 
 // appendTopicJoin adds the topic-filter JOIN clause shared by RecommendDue
@@ -183,7 +205,14 @@ func appendTopicJoin(query string, args []any, topic *string) (string, []any) {
 
 // scanReviewItems is the shared row-scanning logic for RecommendDue and
 // RecommendUpcoming — both select the same columns, just with a
-// different WHERE clause.
+// different WHERE clause. Topics are batch-loaded in one query AFTER the
+// outer rows are fully drained (see attachTopicsToItems) rather than one
+// query per row while rows is still open — both to avoid an N+1 query
+// per page, and because a per-row query on an open outer cursor would
+// deadlock if this ever ran under sql.DB.SetMaxOpenConns(1) (standard
+// advice for a single-writer SQLite app): the inner query would wait
+// forever for a connection the outer, unfinished iteration is still
+// holding.
 func (s *Service) scanReviewItems(ctx context.Context, rows *sql.Rows) ([]DueItem, error) {
 	var items []DueItem
 	for rows.Next() {
@@ -207,13 +236,59 @@ func (s *Service) scanReviewItems(ctx context.Context, rows *sql.Rows) ([]DueIte
 			return nil, fmt.Errorf("service: parse last_reviewed_at: %w", err)
 		}
 
-		topics, err := loadProblemTopics(ctx, s.db, item.ID)
-		if err != nil {
-			return nil, err
-		}
-		item.Topics = topics
-
 		items = append(items, item)
 	}
-	return items, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	if err := s.attachTopicsToItems(ctx, items); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+// attachTopicsToItems batch-loads topics for every item in one query
+// (bounded by the app's own pagination cap — at most 50 items per page,
+// see internal/httpapi/pagination.go — well under SQLite's parameter
+// limit, so no chunking is needed) instead of one query per item.
+// ORDER BY t.name on the batched query keeps each individual item's
+// topics alphabetically sorted, matching the old per-item query's
+// ordering: a subset of a globally name-sorted sequence is itself
+// name-sorted, regardless of how rows for different items interleave.
+func (s *Service) attachTopicsToItems(ctx context.Context, items []DueItem) error {
+	if len(items) == 0 {
+		return nil
+	}
+
+	ids := make([]any, len(items))
+	placeholders := make([]string, len(items))
+	indexByID := make(map[int64]int, len(items))
+	for i, item := range items {
+		ids[i] = item.ID
+		placeholders[i] = "?"
+		indexByID[item.ID] = i
+	}
+
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT pt.problem_id, t.name
+		FROM problem_topics pt
+		JOIN topics t ON t.id = pt.topic_id
+		WHERE pt.problem_id IN (`+strings.Join(placeholders, ",")+`)
+		ORDER BY t.name`, ids...)
+	if err != nil {
+		return fmt.Errorf("service: batch load topics: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var problemID int64
+		var name string
+		if err := rows.Scan(&problemID, &name); err != nil {
+			return fmt.Errorf("service: scan batched topic: %w", err)
+		}
+		idx := indexByID[problemID]
+		items[idx].Topics = append(items[idx].Topics, name)
+	}
+	return rows.Err()
 }

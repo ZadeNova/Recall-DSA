@@ -1,6 +1,12 @@
 {{define "topic-picker"}}
 <div class="topic-picker">
-  <input type="text" class="topic-filter" placeholder="Filter topics..." oninput="filterTopicChips(this)">
+  <div class="topic-picker-header">
+    <div>
+      <p class="section-title">Topics</p>
+      <p class="section-subtitle">Assign DSA algorithm categories and patterns to this problem.</p>
+    </div>
+    <input type="text" class="topic-filter" placeholder="Filter topics..." oninput="filterTopicChips(this)">
+  </div>
   <div class="topic-chips">
     {{range .AllTopics}}
     <label class="topic-chip">
@@ -9,12 +15,15 @@
     </label>
     {{end}}
   </div>
-  <label>New topic(s) (comma-separated) <input type="text" name="new_topics" size="30"></label>
+  <div class="new-topic-row">
+    <label for="new-topics-input">New topic(s) (comma-separated):</label>
+    <input type="text" id="new-topics-input" name="new_topics">
+  </div>
 </div>
 <script>
   function filterTopicChips(input) {
     var q = input.value.toLowerCase();
-    var chips = input.parentElement.querySelectorAll(".topic-chip");
+    var chips = input.closest(".topic-picker").querySelectorAll(".topic-chip");
     chips.forEach(function (chip) {
       chip.hidden = q !== "" && chip.textContent.toLowerCase().indexOf(q) === -1;
     });

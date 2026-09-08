@@ -17,13 +17,14 @@ var templateFS embed.FS
 // (which each define a uniquely-named block, e.g. "due-table") are safe
 // to include in every page's set even when unused.
 type pageTemplates struct {
-	home      *template.Template
-	due       *template.Template
-	addForm   *template.Template
-	editForm  *template.Template
-	library   *template.Template
-	topics    *template.Template
-	errorPage *template.Template
+	home       *template.Template
+	due        *template.Template
+	addForm    *template.Template
+	editForm   *template.Template
+	library    *template.Template
+	topics     *template.Template
+	importPage *template.Template
+	errorPage  *template.Template
 }
 
 func loadTemplates() (*pageTemplates, error) {
@@ -53,6 +54,9 @@ func loadTemplates() (*pageTemplates, error) {
 		return nil, err
 	}
 	if t.topics, err = parse("topics.html"); err != nil {
+		return nil, err
+	}
+	if t.importPage, err = parse("import.html"); err != nil {
 		return nil, err
 	}
 	if t.errorPage, err = parse("error.html"); err != nil {

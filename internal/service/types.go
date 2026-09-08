@@ -27,6 +27,13 @@ func (d Difficulty) valid() bool {
 	}
 }
 
+// Valid reports whether d is one of the three recognized difficulties —
+// exported so callers outside this package (e.g. httpapi's bulk-import
+// row validation) can check without duplicating the enum.
+func (d Difficulty) Valid() bool {
+	return d.valid()
+}
+
 // Problem is a row from the problems table, with its topic tags resolved.
 type Problem struct {
 	ID         int64

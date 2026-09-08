@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"fmt"
 	"strings"
 )
 
@@ -30,29 +29,7 @@ func (s *Service) ListLibrary(ctx context.Context, filter ListProblemsFilter) ([
 		where = " WHERE " + strings.Join(conditions, " AND ")
 	}
 
-	var total int
-	countQuery := `SELECT COUNT(DISTINCT p.id) ` + from + where
-	if err := s.db.QueryRowContext(ctx, countQuery, args...).Scan(&total); err != nil {
-		return nil, 0, fmt.Errorf("service: count library: %w", err)
-	}
-
-	query := `SELECT p.id, p.title, p.url, p.difficulty, p.slug,
-		rs.ease_factor, rs.interval_days, rs.repetitions,
-		rs.next_review_date, rs.last_grade, rs.last_reviewed_at ` +
-		from + where + ` ORDER BY ` + libraryOrderBy(filter.Sort) + ` LIMIT ? OFFSET ?`
-	pageArgs := append(append([]any{}, args...), filter.Limit, filter.Offset)
-
-	rows, err := s.db.QueryContext(ctx, query, pageArgs...)
-	if err != nil {
-		return nil, 0, fmt.Errorf("service: list library: %w", err)
-	}
-	defer rows.Close()
-
-	items, err := s.scanReviewItems(ctx, rows)
-	if err != nil {
-		return nil, 0, err
-	}
-	return items, total, nil
+	return s.queryReviewItems(ctx, from, where, libraryOrderBy(filter.Sort), args, filter.Limit, filter.Offset)
 }
 
 // libraryOrderBy maps a sort name to a whitelisted ORDER BY clause —

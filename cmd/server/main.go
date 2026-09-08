@@ -3,15 +3,24 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"log"
 	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/ZadeNova/recall-dsa/internal/db"
 	"github.com/ZadeNova/recall-dsa/internal/httpapi"
 	"github.com/ZadeNova/recall-dsa/internal/service"
 )
+
+// shutdownTimeout bounds how long we wait for in-flight requests (e.g. a
+// grading POST mid-write) to finish once a shutdown signal arrives,
+// before giving up and exiting anyway.
+const shutdownTimeout = 10 * time.Second
 
 func main() {
 	dbPath := flag.String("db", "recall.db", "path to the SQLite database file")
@@ -37,8 +46,40 @@ func main() {
 		log.Fatalf("build server: %v", err)
 	}
 
-	log.Printf("listening on %s (db=%s tz=%s)", *addr, *dbPath, *tz)
-	if err := http.ListenAndServe(*addr, srv.Routes()); err != nil {
-		log.Fatal(err)
+	httpServer := &http.Server{
+		Addr:    *addr,
+		Handler: srv.Routes(),
+	}
+
+	// ctx's Done channel closes the moment the process receives SIGINT
+	// (Ctrl+C) or SIGTERM (what systemd/Docker send on stop) — see the
+	// package doc comment below for why this is the right tool here.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	serverErr := make(chan error, 1)
+	go func() {
+		log.Printf("listening on %s (db=%s tz=%s)", *addr, *dbPath, *tz)
+		serverErr <- httpServer.ListenAndServe()
+	}()
+
+	select {
+	case err := <-serverErr:
+		// ListenAndServe only returns early on a real startup/runtime
+		// error (e.g. the port is already in use) — a normal shutdown
+		// is handled by the ctx.Done() branch below instead.
+		if err != nil && err != http.ErrServerClosed {
+			log.Fatalf("server error: %v", err)
+		}
+	case <-ctx.Done():
+		log.Print("shutdown signal received, finishing in-flight requests...")
+		stop() // restore default OS behavior: a second Ctrl+C now force-kills immediately
+
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+		defer cancel()
+
+		if err := httpServer.Shutdown(shutdownCtx); err != nil {
+			log.Printf("graceful shutdown timed out: %v", err)
+		}
 	}
 }

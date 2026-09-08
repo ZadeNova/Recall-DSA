@@ -34,8 +34,9 @@
   <button type="submit">Filter</button>
 </form>
 
+<div class="table-scroll">
 <table>
-  <tr><th>Title</th><th>Difficulty</th><th>Topics</th><th>SRS Interval</th><th>Next Review</th><th></th></tr>
+  <tr><th>Title</th><th>Difficulty</th><th>Topics</th><th>Interval</th><th>Next Review</th><th></th></tr>
   {{range .Rows}}
   <tr>
     <td><a class="problem-title" href="{{.URL}}" target="leetcode">{{.Title}}</a></td>
@@ -47,25 +48,9 @@
   </tr>
   {{end}}
 </table>
-
-<div class="pagination">
-  <span class="meta">{{.ShowingText}}</span>
-  <span class="pagination-controls">
-    {{if .PrevURL}}<a href="{{.PrevURL}}">&laquo; Prev</a>{{end}}
-    <form method="get" action="/library" class="page-size-form">
-      <input type="hidden" name="q" value="{{.Search}}">
-      <input type="hidden" name="topic" value="{{.SelectedTopic}}">
-      <input type="hidden" name="difficulty" value="{{.SelectedDifficulty}}">
-      <input type="hidden" name="sort" value="{{.Sort}}">
-      <select name="page_size" onchange="this.form.submit()">
-        <option value="10" {{if eq .PageSize 10}}selected{{end}}>10 rows</option>
-        <option value="25" {{if eq .PageSize 25}}selected{{end}}>25 rows</option>
-        <option value="50" {{if eq .PageSize 50}}selected{{end}}>50 rows</option>
-      </select>
-    </form>
-    {{if .NextURL}}<a href="{{.NextURL}}">Next &raquo;</a>{{end}}
-  </span>
 </div>
+
+{{template "pagination" .Page}}
 
 <script>
   document.addEventListener("keydown", function (e) {

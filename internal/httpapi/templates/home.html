@@ -1,5 +1,16 @@
 {{define "content"}}
-<h1>Recall-DSA</h1>
+<h1>Home</h1>
+
+{{if eq .TotalTracked 0}}
+<div class="section-card">
+  <h2>Get started</h2>
+  <p>Nothing tracked yet. Import your solved problems in bulk, or add them one at a time.</p>
+  <div class="form-actions">
+    <a href="/problems/import" class="btn-link">Import your solved problems &rarr;</a>
+    <a href="/problems/new" class="btn-secondary">or add one at a time</a>
+  </div>
+</div>
+{{else}}
 <p><strong>{{.DueCount}}</strong> due for review.</p>
 
 <div class="stats-row">
@@ -43,4 +54,5 @@
     {{end}}
   </div>
 </div>
+{{end}}
 {{end}}

@@ -113,3 +113,58 @@ func TestUpcomingByDay_ZeroFillsAndGroupsByExactOffset(t *testing.T) {
 		t.Errorf("UpcomingByDay(5) = %+v, want %+v", got, want)
 	}
 }
+
+func TestDueStats_CountsDueAndOverdueSeparately(t *testing.T) {
+	s := newTestService(t)
+	ctx := context.Background()
+	at := time.Now()
+
+	add := func(title, slug string, topics []string) int64 {
+		t.Helper()
+		p, err := s.AddProblem(ctx, AddProblemInput{
+			Title: title, URL: slug, Difficulty: DifficultyEasy, Topics: topics, Grade: scheduler.Good, At: at,
+		})
+		if err != nil {
+			t.Fatalf("AddProblem(%s): unexpected err: %v", title, err)
+		}
+		return p.ID
+	}
+	setDue := func(id int64, date string) {
+		t.Helper()
+		if _, err := s.db.ExecContext(ctx, `UPDATE review_state SET next_review_date = ? WHERE problem_id = ?`, date, id); err != nil {
+			t.Fatalf("unexpected err: %v", err)
+		}
+	}
+
+	overdue1 := add("Overdue 1", "overdue-1", []string{"Graphs"})
+	overdue2 := add("Overdue 2", "overdue-2", nil)
+	dueToday := add("Due Today", "due-today", nil)
+	notYetDue := add("Not Yet Due", "not-yet-due", nil)
+
+	setDue(overdue1, "2026-01-05")
+	setDue(overdue2, "2026-01-08")
+	setDue(dueToday, "2026-01-10")
+	setDue(notYetDue, "2026-01-15")
+
+	fixedClock(s, time.Date(2026, 1, 10, 9, 0, 0, 0, time.UTC)) // "today" = 2026-01-10 SGT
+
+	due, overdue, err := s.DueStats(ctx, nil)
+	if err != nil {
+		t.Fatalf("DueStats: unexpected err: %v", err)
+	}
+	if due != 3 {
+		t.Errorf("due = %d, want 3 (2 overdue + 1 due today)", due)
+	}
+	if overdue != 2 {
+		t.Errorf("overdue = %d, want 2", overdue)
+	}
+
+	topic := "Graphs"
+	due, overdue, err = s.DueStats(ctx, &topic)
+	if err != nil {
+		t.Fatalf("DueStats(topic=Graphs): unexpected err: %v", err)
+	}
+	if due != 1 || overdue != 1 {
+		t.Errorf("DueStats(topic=Graphs) = (due=%d, overdue=%d), want (1, 1)", due, overdue)
+	}
+}

@@ -1,16 +1,30 @@
 {{define "content"}}
 <h1>Edit Problem</h1>
+<p class="page-subtitle">Update problem details, and re-tag as needed.</p>
+<hr class="page-divider">
 {{if .Error}}<p class="error">{{.Error}}</p>{{end}}
 <form method="post" action="/problems/{{.Problem.ID}}/update">
-  <p><label>Title <input type="text" name="title" value="{{.Problem.Title}}" required></label></p>
-  <p><label>LeetCode URL or slug <input type="text" name="url" class="mono" value="{{.Problem.URL}}" required></label></p>
-  <p>Difficulty</p>
+  <div class="field-row">
+    <div>
+      <div class="field-header"><label for="title">Title</label></div>
+      <input type="text" id="title" name="title" value="{{.Problem.Title}}" required>
+    </div>
+    <div>
+      <div class="field-header"><label for="url">LeetCode URL or slug</label></div>
+      <input type="text" id="url" name="url" class="mono" value="{{.Problem.URL}}" required>
+    </div>
+  </div>
+
+  <p class="section-title">Difficulty</p>
   {{template "difficulty-picker" .Problem.Difficulty}}
-  <p>Topics</p>
+
   {{template "topic-picker" .}}
-  <button type="submit">Save</button>
+
+  <div class="form-actions">
+    <a href="/library" class="btn-secondary">Back</a>
+    <button type="submit">Save</button>
+    <button type="submit" form="delete-problem-form" class="btn-danger">Delete</button>
+  </div>
 </form>
-<form method="post" action="/problems/{{.Problem.ID}}/delete" onsubmit="return confirm('Delete this problem? This also removes its attempt history.');">
-  <button type="submit" class="btn-danger">Delete</button>
-</form>
+<form id="delete-problem-form" method="post" action="/problems/{{.Problem.ID}}/delete" onsubmit="return confirm('Delete this problem? This also removes its attempt history.');"></form>
 {{end}}

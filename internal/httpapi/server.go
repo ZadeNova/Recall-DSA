@@ -50,6 +50,10 @@ func (s *Server) Routes() http.Handler {
 
 	mux.HandleFunc("GET /library", s.handleLibrary)
 
+	mux.HandleFunc("GET /problems/import", s.handleImportForm)
+	mux.HandleFunc("POST /problems/import/preview", s.handleImportPreview)
+	mux.HandleFunc("POST /problems/import/commit", s.handleImportCommit)
+
 	mux.HandleFunc("GET /topics", s.handleTopicsPage)
 	mux.HandleFunc("POST /topics", s.handleCreateTopic)
 	mux.HandleFunc("POST /topics/{id}/rename", s.handleRenameTopic)

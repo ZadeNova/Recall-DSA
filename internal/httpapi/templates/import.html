@@ -1,0 +1,135 @@
+{{define "content"}}
+<h1>Import Problems</h1>
+<p class="page-subtitle">Bulk-import already-solved problems from a CSV paste. Every row is baseline-graded Hard, with review dates staggered across the next two weeks.</p>
+<hr class="page-divider">
+
+{{if .Result}}
+<div class="section-card">
+  <h2>Import complete</h2>
+  <p>{{.Result.Created}} problem{{if ne .Result.Created 1}}s{{end}} added, {{.Result.Merged}} refreshed, {{.Result.Skipped}} left untouched (already progressing).</p>
+  <div class="form-actions">
+    <a href="/library" class="btn-link">Go to Library &rarr;</a>
+    <a href="/due" class="btn-secondary">Go to Due</a>
+  </div>
+</div>
+{{else}}
+
+{{if .Error}}<p class="error">{{.Error}}</p>{{end}}
+
+{{if not .Submitted}}
+<div class="section-card">
+  <p class="section-subtitle">Columns: <code class="mono">title,url,difficulty,topics</code> &mdash; topics are semicolon-separated (e.g. <code class="mono">Arrays;Hash Table</code>). A header row is optional.</p>
+  <p class="section-subtitle">To generate this from your own solved problems: open any leetcode.com page while logged in, open the browser console (F12 &rarr; Console), paste the script below, and copy the CSV text it prints.</p>
+  <pre class="code-block">(async () =&gt; {
+  const query = `
+    query problemsetQuestionList($categorySlug: String, $skip: Int, $limit: Int, $filters: QuestionListFilterInput) {
+      problemsetQuestionList: questionList(
+        categorySlug: $categorySlug
+        limit: $limit
+        skip: $skip
+        filters: $filters
+      ) {
+        total: totalNum
+        questions: data {
+          title
+          titleSlug
+          difficulty
+          status
+          topicTags { name }
+        }
+      }
+    }
+  `;
+
+  const rows = [];
+  const limit = 100;
+  let skip = 0;
+  let total = Infinity;
+
+  while (skip &lt; total) {
+    const res = await fetch("https://leetcode.com/graphql", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({
+        query,
+        variables: { categorySlug: "algorithms", skip, limit, filters: {} },
+      }),
+    });
+    const json = await res.json();
+    if (json.errors) {
+      console.error("GraphQL errors:", json.errors);
+      return;
+    }
+    const page = json.data.problemsetQuestionList;
+    total = page.total;
+    for (const q of page.questions) {
+      if (q.status === "ac") rows.push(q);
+    }
+    skip += limit;
+  }
+
+  const csvLines = rows.map(q =&gt; {
+    const url = `https://leetcode.com/problems/${q.titleSlug}/`;
+    const topics = q.topicTags.map(t =&gt; t.name).join(";");
+    const title = q.title.includes(",") ? `"${q.title}"` : q.title;
+    return `${title},${url},${q.difficulty},${topics}`;
+  });
+
+  const csv = "title,url,difficulty,topics\n" + csvLines.join("\n");
+  console.log(csv);
+  try {
+    await navigator.clipboard.writeText(csv);
+    console.log(`Copied ${rows.length} solved problems to clipboard.`);
+  } catch {
+    console.log(`${rows.length} rows &mdash; clipboard write blocked, copy the logged text above manually.`);
+  }
+})();</pre>
+</div>
+{{end}}
+
+<form method="post" action="/problems/import/preview">
+  <p class="section-title">Paste CSV</p>
+  <textarea name="csv" class="import-textarea" rows="12" placeholder="title,url,difficulty,topics&#10;Two Sum,https://leetcode.com/problems/two-sum/,Easy,Arrays;Hash Table">{{.RawCSV}}</textarea>
+  <div class="field-header"><label for="target-per-day">Target new reviews per day</label></div>
+  <input type="number" id="target-per-day" name="target_per_day" min="1" value="{{.TargetPerDay}}" class="input-small">
+  <p class="field-hint">Controls how many days the batch's review dates spread across, so they don't all land due on the same day.</p>
+  <div class="form-actions">
+    <button type="submit">Preview</button>
+  </div>
+</form>
+
+{{if .Rows}}
+<div class="table-scroll">
+<table>
+  <tr><th>Line</th><th>Title</th><th>Difficulty</th><th>Topics</th><th>Status</th></tr>
+  {{range .Rows}}
+  <tr>
+    <td class="meta">{{.Line}}</td>
+    <td>{{.Title}}</td>
+    <td class="difficulty-{{.Difficulty}}">{{.Difficulty}}</td>
+    <td>{{range .Topics}}<span class="topic-tag">{{.}}</span>{{end}}</td>
+    <td>
+      {{if eq .Status "new"}}<span class="import-status-new">New</span>
+      {{else if eq .Status "merge"}}<span class="import-status-merge">Will merge</span>
+      {{else if eq .Status "protected"}}<span class="import-status-protected">Already progressing &mdash; will be left as-is</span>
+      {{else}}<span class="import-status-error">{{.Issue}}</span>{{end}}
+    </td>
+  </tr>
+  {{end}}
+</table>
+</div>
+
+{{if not .HasErrors}}
+<form method="post" action="/problems/import/commit">
+  <textarea name="csv" hidden>{{.RawCSV}}</textarea>
+  <input type="hidden" name="target_per_day" value="{{.TargetPerDay}}">
+  <div class="form-actions">
+    <button type="submit">Confirm Import ({{len .Rows}} rows)</button>
+  </div>
+</form>
+{{end}}
+{{end}}
+
+{{end}}
+{{end}}

@@ -60,6 +60,8 @@ func navActiveFor(path string) string {
 		return "library"
 	case path == "/problems/new" || path == "/problems":
 		return "add"
+	case strings.HasPrefix(path, "/problems/import"):
+		return "import"
 	case strings.HasPrefix(path, "/topics"):
 		return "topics"
 	default:

@@ -38,6 +38,14 @@ func extractSlug(raw string) (string, error) {
 	return strings.ToLower(strings.Trim(raw, "/")), nil
 }
 
+// ExtractSlug normalizes a pasted LeetCode URL or bare slug to its
+// canonical slug — exported so callers outside this package (e.g.
+// httpapi's bulk-import preview) can validate/dedupe rows before commit
+// using this project's one LeetCode-URL-parsing implementation.
+func ExtractSlug(raw string) (string, error) {
+	return extractSlug(raw)
+}
+
 // canonicalURL reconstructs the display/storage URL from a slug (SPEC.md
 // §3), rather than keeping whatever variant of the URL was typed in.
 func canonicalURL(slug string) string {
@@ -173,7 +181,7 @@ func (s *Service) AddProblem(ctx context.Context, input AddProblemInput) (Proble
 		if err := recordAttempt(ctx, tx, problemID, input.Grade, input.At); err != nil {
 			return err
 		}
-		if _, err := recordReview(ctx, tx, s.loc, problemID, input.Grade, input.At); err != nil {
+		if _, err := recordReview(ctx, tx, s.loc, problemID, input.Grade, input.At, nil); err != nil {
 			return err
 		}
 

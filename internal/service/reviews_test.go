@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"math"
 	"reflect"
 	"testing"
@@ -122,9 +123,12 @@ func TestRecommendDue_FiltersOverdueAndOrdersByMostOverdueFirst(t *testing.T) {
 
 	fixedClock(s, time.Date(2026, 1, 10, 9, 0, 0, 0, time.UTC)) // 2026-01-10 in SGT too
 
-	due, err := s.RecommendDue(ctx, nil)
+	due, total, err := s.RecommendDue(ctx, nil, 100, 0)
 	if err != nil {
 		t.Fatalf("RecommendDue: unexpected err: %v", err)
+	}
+	if total != 3 {
+		t.Errorf("total = %d, want 3", total)
 	}
 
 	var gotIDs []int64
@@ -134,6 +138,109 @@ func TestRecommendDue_FiltersOverdueAndOrdersByMostOverdueFirst(t *testing.T) {
 	wantIDs := []int64{overdueFar, overdueNear, dueToday}
 	if !reflect.DeepEqual(gotIDs, wantIDs) {
 		t.Errorf("due IDs = %v, want %v (overdue+today, most overdue first, not-yet-due excluded)", gotIDs, wantIDs)
+	}
+}
+
+// TestRecommendDue_NoConnectionPoolDeadlockUnderSingleConnection guards
+// against a real regression: scanReviewItems once called
+// loadProblemTopics per-row while the outer *sql.Rows was still open, so
+// the inner query would block forever waiting for a connection the
+// outer, unfinished iteration was still holding — reproduced manually by
+// setting SetMaxOpenConns(1) and watching ListLibrary/RecommendDue hang.
+// SetMaxOpenConns(1) is standard advice for a single-writer SQLite app
+// (SPEC.md §10), so this isn't a hypothetical: it's one config change
+// away from being live. Topics must still come back correctly attached,
+// not just "didn't hang" — the fix (batch-loading after the outer rows
+// are drained) shouldn't change what's returned, only when the topics
+// query runs.
+func TestRecommendDue_NoConnectionPoolDeadlockUnderSingleConnection(t *testing.T) {
+	s := newTestService(t)
+	s.db.SetMaxOpenConns(1)
+	ctx := context.Background()
+	// Graded 10 days ago with Good's 5-day first interval lands 5 days in
+	// the past — overdue, so RecommendDue actually returns these rows
+	// rather than 0 (the point of this test is proving the query
+	// completes with topics attached, not just that it doesn't hang).
+	at := time.Now().AddDate(0, 0, -10)
+
+	for i, title := range []string{"Two Sum", "Valid Anagram", "Group Anagrams"} {
+		if _, err := s.AddProblem(ctx, AddProblemInput{
+			Title: title, URL: fmt.Sprintf("problem-%d", i), Difficulty: DifficultyEasy,
+			Topics: []string{"Arrays", "Hash Table"}, Grade: scheduler.Good, At: at,
+		}); err != nil {
+			t.Fatalf("AddProblem(%s): unexpected err: %v", title, err)
+		}
+	}
+
+	done := make(chan struct {
+		items []DueItem
+		err   error
+	}, 1)
+	go func() {
+		items, _, err := s.RecommendDue(ctx, nil, 10, 0)
+		done <- struct {
+			items []DueItem
+			err   error
+		}{items, err}
+	}()
+
+	select {
+	case result := <-done:
+		if result.err != nil {
+			t.Fatalf("RecommendDue: unexpected err: %v", result.err)
+		}
+		if len(result.items) != 3 {
+			t.Fatalf("len(items) = %d, want 3", len(result.items))
+		}
+		for _, item := range result.items {
+			if len(item.Topics) != 2 {
+				t.Errorf("problem %q topics = %v, want 2 topics attached", item.Title, item.Topics)
+			}
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("RecommendDue deadlocked under SetMaxOpenConns(1) — a per-row query is running while the outer cursor is still open")
+	}
+}
+
+func TestRecommendDue_Pagination(t *testing.T) {
+	s := newTestService(t)
+	ctx := context.Background()
+	at := time.Now()
+
+	var ids []int64
+	for i := 0; i < 5; i++ {
+		p, err := s.AddProblem(ctx, AddProblemInput{
+			Title: fmt.Sprintf("Problem %d", i), URL: fmt.Sprintf("problem-%d", i),
+			Difficulty: DifficultyEasy, Grade: scheduler.Good, At: at,
+		})
+		if err != nil {
+			t.Fatalf("AddProblem: unexpected err: %v", err)
+		}
+		ids = append(ids, p.ID)
+	}
+	// All 5 are due (Good = 5-day interval; fast-forward past it).
+	fixedClock(s, at.AddDate(0, 0, 10))
+
+	page1, total, err := s.RecommendDue(ctx, nil, 2, 0)
+	if err != nil {
+		t.Fatalf("RecommendDue page1: unexpected err: %v", err)
+	}
+	if total != 5 {
+		t.Fatalf("total = %d, want 5 (independent of limit)", total)
+	}
+	if len(page1) != 2 {
+		t.Fatalf("len(page1) = %d, want 2", len(page1))
+	}
+
+	page3, total, err := s.RecommendDue(ctx, nil, 2, 4)
+	if err != nil {
+		t.Fatalf("RecommendDue page3: unexpected err: %v", err)
+	}
+	if total != 5 {
+		t.Errorf("total = %d, want 5", total)
+	}
+	if len(page3) != 1 {
+		t.Errorf("len(page3) = %d, want 1 (5 items, page size 2, offset 4 -> 1 remaining)", len(page3))
 	}
 }
 
@@ -173,9 +280,12 @@ func TestRecommendUpcoming_WindowBoundaryAndOrdering(t *testing.T) {
 
 	fixedClock(s, time.Date(2026, 1, 10, 9, 0, 0, 0, time.UTC)) // "today" = 2026-01-10 in SGT
 
-	upcoming, err := s.RecommendUpcoming(ctx, nil, 7)
+	upcoming, total, err := s.RecommendUpcoming(ctx, nil, 7, 100, 0)
 	if err != nil {
 		t.Fatalf("RecommendUpcoming: unexpected err: %v", err)
+	}
+	if total != 3 {
+		t.Errorf("total = %d, want 3", total)
 	}
 
 	var gotIDs []int64
@@ -211,7 +321,7 @@ func TestRecommendUpcoming_FiltersByTopic(t *testing.T) {
 	// inside a 7-day upcoming window relative to "now" — the topic filter
 	// is the only thing distinguishing the results.
 	topic := "Graphs"
-	upcoming, err := s.RecommendUpcoming(ctx, &topic, 7)
+	upcoming, _, err := s.RecommendUpcoming(ctx, &topic, 7, 100, 0)
 	if err != nil {
 		t.Fatalf("RecommendUpcoming: unexpected err: %v", err)
 	}
@@ -245,7 +355,7 @@ func TestRecommendDue_FiltersByTopic(t *testing.T) {
 	fixedClock(s, at.AddDate(1, 0, 0))
 
 	topic := "Graphs"
-	due, err := s.RecommendDue(ctx, &topic)
+	due, _, err := s.RecommendDue(ctx, &topic, 100, 0)
 	if err != nil {
 		t.Fatalf("RecommendDue: unexpected err: %v", err)
 	}

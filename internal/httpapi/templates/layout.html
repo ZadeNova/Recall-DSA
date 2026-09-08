@@ -3,6 +3,7 @@
 <html data-theme="{{.Theme}}">
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Recall-DSA</title>
 <script src="/assets/htmx.min.js"></script>
 <style>
@@ -113,9 +114,11 @@
   }
 
   /* Typography (FRONTEND.md): restrained scale, IBM Plex Sans primary,
-     IBM Plex Mono only for code/URLs/slugs/technical identifiers. Do
-     not add sizes/weights beyond what's listed there. */
-  body { font-family: var(--font-sans); font-size: 15px; font-weight: 400; line-height: 1.5; max-width: 900px; margin: 2rem auto; padding: 0 1rem; background: var(--bg); color: var(--text); }
+     IBM Plex Mono for code/URLs/slugs/technical identifiers, and raw
+     system/error output (error.html's message line — that's a Go error
+     string like the ones a log line would show, not authored prose).
+     Do not add sizes/weights beyond what's listed there. */
+  body { font-family: var(--font-sans); font-size: 15px; font-weight: 400; line-height: 1.5; max-width: 1200px; margin: 2rem auto; padding: 0 1rem; background: var(--bg); color: var(--text); }
   input, select, textarea { font-family: inherit; font-size: 15px; }
   input[type="text"], select { padding: 0.35rem 0.5rem; border: 1px solid var(--border); border-radius: 4px; background: var(--surface-bg); color: var(--text); }
   /* Base button look — every plain <button> gets this; more specific
@@ -126,24 +129,44 @@
   button.btn-danger { background: var(--danger); }
   a.btn-link { display: inline-block; background: var(--link); color: var(--color-base); border-radius: 4px; padding: 0.4rem 0.9rem; text-decoration: none; font-weight: 500; }
   a.btn-link:hover { filter: brightness(1.1); }
+  a.btn-secondary { display: inline-block; background: transparent; color: var(--text); border: 1px solid var(--border); border-radius: 4px; padding: 0.4rem 0.9rem; text-decoration: none; font-weight: 500; }
+  a.btn-secondary:hover { background: var(--surface-bg); }
   h1 { font-size: 28px; font-weight: 600; line-height: 1.25; margin: 0 0 0.5rem; }
   h2 { font-size: 20px; font-weight: 600; line-height: 1.25; margin: 1.5rem 0 0.5rem; }
   th, label { font-size: 12px; font-weight: 500; }
   .problem-title { font-size: 16px; font-weight: 500; }
-  .meta { font-size: 13px; font-weight: 400; }
+  .meta { font-size: 13px; font-weight: 400; color: var(--muted-text); }
   code, .mono { font-family: var(--font-mono); }
+  .page-subtitle { color: var(--muted-text); margin: 0 0 1rem; }
+  .page-divider { border: none; border-top: 1px solid var(--border); margin: 0 0 1.5rem; }
+  .section-title { font-size: 16px; font-weight: 600; margin: 1.5rem 0 0.25rem; }
+  .section-subtitle { font-size: 13px; color: var(--muted-text); margin: 0 0 0.5rem; }
+  .field-row { display: flex; gap: 1.5rem; flex-wrap: wrap; margin-bottom: 1rem; }
+  .field-row > div { flex: 1; min-width: 220px; }
+  .field-header { display: flex; justify-content: space-between; align-items: baseline; gap: 0.5rem; }
+  .field-row > div input[type="text"] { display: block; width: 100%; margin-top: 0.25rem; box-sizing: border-box; }
+  .input-small { width: 6rem; margin-top: 0.25rem; box-sizing: border-box; }
+  .field-hint { font-size: 12px; color: var(--muted-text); }
+  .form-actions { display: flex; align-items: center; gap: 0.75rem; margin-top: 1.5rem; flex-wrap: wrap; }
 
   a { color: var(--link); }
   nav { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.5rem; padding-bottom: 0.75rem; margin-bottom: 0.75rem; border-bottom: 1px solid var(--border); }
+  .nav-left, .nav-right { display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem; }
+  .brand { font-size: 17px; font-weight: 700; letter-spacing: -0.01em; color: var(--link); text-decoration: none; margin-right: 0.5rem; }
   .nav-links a { display: inline-block; margin-right: 0.25rem; padding: 0.35rem 0.7rem; border-radius: 4px; color: var(--text); text-decoration: none; font-weight: 500; }
   .nav-links a:hover { background: var(--surface-bg); }
   .nav-links a.nav-active { background: var(--tag-bg); color: var(--link); }
   .due-pill { display: inline-block; margin-right: 0.6rem; padding: 0.2rem 0.6rem; border-radius: 999px; background: var(--tag-bg); color: var(--link); font-size: 13px; font-weight: 500; text-decoration: none; }
   .due-pill:hover { filter: brightness(1.1); }
-  .theme-switcher a { margin-right: 0.6rem; padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 13px; color: var(--muted-text); text-decoration: none; }
-  .theme-switcher a:hover { background: var(--surface-bg); }
-  .theme-switcher a.theme-active { color: var(--link); font-weight: 600; background: var(--tag-bg); }
+  .theme-switcher { display: inline-flex; align-items: center; gap: 2px; border: 1px solid var(--border); border-radius: 6px; padding: 2px; background: var(--surface-bg); }
+  .theme-switcher a { padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 13px; color: var(--muted-text); text-decoration: none; }
+  .theme-switcher a:hover { background: var(--bg); }
+  .theme-switcher a.theme-active { color: var(--text); font-weight: 600; background: var(--bg); }
   table { border-collapse: collapse; width: 100%; margin-top: 1rem; }
+  /* Lets a too-wide table scroll horizontally within its own box on a
+     narrow window, instead of forcing the whole page to scroll sideways. */
+  .table-scroll { overflow-x: auto; margin-top: 1rem; }
+  .table-scroll table { margin-top: 0; }
   th, td { text-align: left; padding: 0.4rem 0.6rem; border-bottom: 1px solid var(--border); vertical-align: top; }
   form.grade-form { display: inline; margin-right: 0.3rem; }
   .grade-btn { border: none; border-radius: 4px; padding: 0.25rem 0.55rem; color: var(--color-base); cursor: pointer; font-size: 13px; font-weight: 500; }
@@ -156,11 +179,25 @@
   .difficulty-Hard { color: var(--difficulty-hard); font-size: 12px; font-weight: 500; }
   .topic-tag { display: inline-block; background: var(--tag-bg); color: var(--tag-accent); border-radius: 4px; padding: 0.1rem 0.5rem; margin: 0 0.2rem 0.2rem 0; font-size: 12px; font-weight: 500; }
   .topic-picker { margin: 0.25rem 0 0.75rem; }
+  .topic-picker-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; flex-wrap: wrap; }
   .topic-filter { display: block; margin-bottom: 0.5rem; max-width: 300px; }
+  .new-topic-row { display: flex; align-items: center; gap: 0.5rem; margin-top: 0.5rem; flex-wrap: wrap; }
+  .new-topic-row label { white-space: nowrap; }
+  .new-topic-row input[type="text"] { flex: 1; min-width: 200px; }
   .topic-chips { display: flex; flex-wrap: wrap; gap: 0.3rem; max-height: 220px; overflow-y: auto; padding: 0.6rem; border: 1px solid var(--border); border-radius: 4px; }
   .topic-chip { display: inline-flex; align-items: center; gap: 0.3rem; padding: 0.15rem 0.55rem; border-radius: 999px; background: var(--tag-bg); color: var(--tag-accent); font-size: 12px; font-weight: 500; cursor: pointer; }
   .topic-chip:has(input:checked) { background: var(--tag-accent); color: var(--color-base); }
   .topic-chip input[type="checkbox"] { margin: 0; }
+  /* The underlying inputs are display:none (custom pill/chip/card look),
+     which also hides the browser's native focus ring — restore visible
+     keyboard-focus feedback on the label itself so tabbing through these
+     controls isn't a dead end, same as any plain <select> already gets. */
+  .topic-chip:has(input:focus-visible),
+  .difficulty-pill:has(input:focus-visible),
+  .grade-card:has(input:focus-visible) {
+    outline: 2px solid var(--link);
+    outline-offset: 2px;
+  }
   .stats-row { display: flex; flex-wrap: wrap; gap: 0.75rem; margin: 1rem 0; }
   .stat-card { flex: 1; min-width: 180px; background: var(--surface-bg); border-radius: 4px; padding: 0.6rem 0.9rem; }
   .stat-number { font-size: 20px; font-weight: 600; margin-top: 0.2rem; }
@@ -168,6 +205,11 @@
   .home-main { flex: 2; min-width: 320px; }
   .home-sidebar { flex: 1; min-width: 240px; display: flex; flex-direction: column; gap: 0.75rem; }
   .sidebar-card { background: var(--surface-bg); border-radius: 4px; padding: 0.75rem 1rem; }
+  /* Same visual weight as .stat-card/.sidebar-card — for primary,
+     actionable content that needs a defined boundary but shouldn't look
+     de-emphasized the way .muted-section's grey/muted-text does. */
+  .section-card { background: var(--surface-bg); border-radius: 4px; padding: 0.75rem 1rem; margin-top: 1rem; }
+  .section-card h2 { margin-top: 0; }
   .upcoming-by-day { list-style: none; margin: 0.5rem 0 0; padding: 0; }
   .upcoming-by-day li { display: flex; justify-content: space-between; padding: 0.25rem 0; border-bottom: 1px solid var(--border); }
   .upcoming-by-day li:last-child { border-bottom: none; }
@@ -176,38 +218,48 @@
   .topic-count-bar-fill { display: block; height: 100%; background: var(--tag-accent); }
   .distribution-row { padding: 0.4rem 0; }
   .distribution-row-header { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 0.2rem; }
-  .difficulty-pill-group { display: flex; gap: 0.5rem; margin: 0.25rem 0 0.75rem; }
-  .difficulty-pill { display: flex; align-items: center; justify-content: center; flex: 1; padding: 0.4rem 0.6rem; border: 1px solid var(--border); border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 500; }
+  .difficulty-pill-group { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0.25rem 0 0.75rem; }
+  .difficulty-pill { display: flex; align-items: center; justify-content: center; flex: 1; padding: 0.65rem 0.6rem; border: 1px solid var(--border); border-radius: 6px; cursor: pointer; font-size: 15px; font-weight: 600; }
   .difficulty-pill input { display: none; }
   .difficulty-pill-Easy:has(input:checked) { background: var(--difficulty-easy); border-color: var(--difficulty-easy); color: var(--color-base); }
   .difficulty-pill-Medium:has(input:checked) { background: var(--difficulty-medium); border-color: var(--difficulty-medium); color: var(--color-base); }
   .difficulty-pill-Hard:has(input:checked) { background: var(--difficulty-hard); border-color: var(--difficulty-hard); color: var(--color-base); }
   .grade-card-group { display: flex; gap: 0.6rem; flex-wrap: wrap; margin: 0.25rem 0 0.75rem; }
-  .grade-card { flex: 1; min-width: 140px; padding: 0.6rem 0.8rem; border: 1px solid var(--border); border-radius: 4px; cursor: pointer; }
+  .grade-card { flex: 1; min-width: 150px; padding: 0.9rem 1rem; border: 1px solid var(--border); border-radius: 6px; cursor: pointer; }
   .grade-card input { display: none; }
-  .grade-card-name { font-size: 13px; font-weight: 600; }
-  .grade-card-interval { font-size: 16px; font-weight: 600; margin: 0.2rem 0; }
+  .grade-card-name { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }
+  .grade-card-interval { font-size: 22px; font-weight: 700; margin: 0.3rem 0; }
   .grade-card-desc { font-size: 12px; color: var(--muted-text); }
-  .grade-card-failed:has(input:checked) { border-color: var(--grade-failed); background: var(--tag-bg); }
-  .grade-card-failed .grade-card-name { color: var(--grade-failed); }
-  .grade-card-hard:has(input:checked) { border-color: var(--grade-hard); background: var(--tag-bg); }
-  .grade-card-hard .grade-card-name { color: var(--grade-hard); }
-  .grade-card-good:has(input:checked) { border-color: var(--grade-good); background: var(--tag-bg); }
-  .grade-card-good .grade-card-name { color: var(--grade-good); }
-  .grade-card-easy:has(input:checked) { border-color: var(--grade-easy); background: var(--tag-bg); }
-  .grade-card-easy .grade-card-name { color: var(--grade-easy); }
+  /* Selected state is a solid fill of the grade's color, matching how
+     .grade-btn (Due's grade buttons) and .difficulty-pill both already
+     represent "this option is active" — one consistent visual language
+     for the same four-way taxonomy everywhere it appears. */
+  .grade-card-failed:has(input:checked) { background: var(--grade-failed); border-color: var(--grade-failed); }
+  .grade-card-hard:has(input:checked) { background: var(--grade-hard); border-color: var(--grade-hard); }
+  .grade-card-good:has(input:checked) { background: var(--grade-good); border-color: var(--grade-good); }
+  .grade-card-easy:has(input:checked) { background: var(--grade-easy); border-color: var(--grade-easy); }
+  .grade-card:has(input:checked) .grade-card-name,
+  .grade-card:has(input:checked) .grade-card-interval,
+  .grade-card:has(input:checked) .grade-card-desc { color: var(--color-base); }
   .library-toolbar { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; margin: 1rem 0; }
   .library-toolbar input[type="text"] { flex: 1; min-width: 200px; }
   .status-overdue { color: var(--danger); font-size: 13px; font-weight: 500; }
   .status-due-today { color: var(--link); font-size: 13px; font-weight: 500; }
   .status-upcoming { color: var(--muted-text); font-size: 13px; }
   .pagination { display: flex; justify-content: space-between; align-items: center; margin-top: 1rem; }
-  .pagination-controls { display: flex; align-items: center; gap: 0.75rem; }
+  .pagination-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; }
   .page-size-form { display: inline; }
   .error { color: var(--danger); }
   .muted-section { background: var(--surface-bg); color: var(--muted-text); font-size: 13px; padding: 0.75rem 1rem; border-radius: 4px; margin-top: 1rem; }
   .muted-section table { margin-top: 0.5rem; }
-  .muted-section th, .muted-section td { border-bottom: 1px solid var(--border); color: var(--muted-text); }
+  .muted-section th, .muted-section td { border-bottom: 1px solid var(--border); }
+
+  .import-textarea { width: 100%; box-sizing: border-box; padding: 0.6rem; border: 1px solid var(--border); border-radius: 4px; background: var(--surface-bg); color: var(--text); font-family: var(--font-mono); font-size: 13px; resize: vertical; }
+  .code-block { background: var(--surface-bg); border: 1px solid var(--border); border-radius: 4px; padding: 0.75rem 1rem; overflow-x: auto; font-family: var(--font-mono); font-size: 12px; white-space: pre; }
+  .import-status-new { color: var(--text); font-weight: 500; }
+  .import-status-merge { color: var(--muted-text); }
+  .import-status-protected { color: var(--link); font-weight: 500; }
+  .import-status-error { color: var(--danger); font-weight: 500; }
 
   /* Motion — a restrained, consistent set of transitions (theme fade,
      hover feedback, htmx grade-confirmation fade-in, one-time bar
@@ -245,18 +297,24 @@
 </head>
 <body>
 <nav>
-  <span class="nav-links">
-    <a href="/" class="{{if eq .Active "home"}}nav-active{{end}}">Home</a>
-    <a href="/due" class="{{if eq .Active "due"}}nav-active{{end}}">Due</a>
-    <a href="/library" class="{{if eq .Active "library"}}nav-active{{end}}">Library</a>
-    <a href="/problems/new" class="{{if eq .Active "add"}}nav-active{{end}}">Add Problem</a>
-    <a href="/topics" class="{{if eq .Active "topics"}}nav-active{{end}}">Topics</a>
+  <span class="nav-left">
+    <a href="/" class="brand">Recall-DSA</a>
+    <span class="nav-links">
+      <a href="/" class="{{if eq .Active "home"}}nav-active{{end}}">Home</a>
+      <a href="/due" class="{{if eq .Active "due"}}nav-active{{end}}">Due</a>
+      <a href="/library" class="{{if eq .Active "library"}}nav-active{{end}}">Library</a>
+      <a href="/problems/new" class="{{if eq .Active "add"}}nav-active{{end}}">Add Problem</a>
+      <a href="/problems/import" class="{{if eq .Active "import"}}nav-active{{end}}">Import</a>
+      <a href="/topics" class="{{if eq .Active "topics"}}nav-active{{end}}">Topics</a>
+    </span>
   </span>
-  <a href="/due" class="due-pill">{{.DueCount}} due today</a>
-  <span class="theme-switcher">
-    <a href="/theme/light" data-theme="light" class="{{if eq .Theme "light"}}theme-active{{end}}">Light</a>
-    <a href="/theme/dark" data-theme="dark" class="{{if eq .Theme "dark"}}theme-active{{end}}">Dark</a>
-    <a href="/theme/nord" data-theme="nord" class="{{if eq .Theme "nord"}}theme-active{{end}}">Nord</a>
+  <span class="nav-right">
+    <a id="nav-due-count" href="/due" class="due-pill">{{.DueCount}} due today</a>
+    <span class="theme-switcher">
+      <a href="/theme/light" data-theme="light" class="{{if eq .Theme "light"}}theme-active{{end}}">Light</a>
+      <a href="/theme/dark" data-theme="dark" class="{{if eq .Theme "dark"}}theme-active{{end}}">Dark</a>
+      <a href="/theme/nord" data-theme="nord" class="{{if eq .Theme "nord"}}theme-active{{end}}">Nord</a>
+    </span>
   </span>
 </nav>
 <script>

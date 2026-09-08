@@ -73,6 +73,28 @@ func (s *Service) CountDue(ctx context.Context) (int, error) {
 	return count, nil
 }
 
+// DueStats returns how many problems are due right now (next_review_date
+// <= today) and, of those, how many are strictly overdue (< today),
+// optionally scoped to one topic. Powers the Due page's stats row and
+// its live refresh after grading via htmx — both need these counts
+// independent of whichever page of results happens to be displayed,
+// which is why this doesn't just derive them from RecommendDue's items.
+func (s *Service) DueStats(ctx context.Context, topic *string) (due, overdue int, err error) {
+	today := s.today()
+	from := `FROM review_state rs JOIN problems p ON p.id = rs.problem_id`
+	from, args := appendTopicJoin(from, nil, topic)
+
+	query := `SELECT COUNT(*), COALESCE(SUM(CASE WHEN rs.next_review_date < ? THEN 1 ELSE 0 END), 0) ` +
+		from + ` WHERE rs.next_review_date <= ?`
+	queryArgs := append([]any{today}, args...)
+	queryArgs = append(queryArgs, today)
+
+	if err := s.db.QueryRowContext(ctx, query, queryArgs...).Scan(&due, &overdue); err != nil {
+		return 0, 0, fmt.Errorf("service: due stats: %w", err)
+	}
+	return due, overdue, nil
+}
+
 // UpcomingByDay groups upcoming reviews by exact day-offset from today
 // (1..days), zero-filled so every offset is always present — Home's
 // "Review Load" sidebar. Purely descriptive, like RecommendUpcoming: it

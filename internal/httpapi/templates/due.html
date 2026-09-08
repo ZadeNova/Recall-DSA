@@ -1,16 +1,29 @@
 {{define "content"}}
 <h1>Due for review</h1>
 
-<form method="get" action="/due">
+<div class="stats-row">
+  <div class="stat-card">
+    <span class="meta">Due Today</span>
+    <div id="due-today-count" class="stat-number">{{.DueCount}}</div>
+  </div>
+  <div class="stat-card">
+    <span class="meta">Overdue</span>
+    <div id="overdue-count" class="stat-number">{{.OverdueCount}}</div>
+  </div>
+</div>
+
+<form method="get" action="/due" class="library-toolbar">
   <select name="topic">
     <option value="">All topics</option>
-    {{range .Topics}}<option value="{{.}}" {{if eq . $.Selected}}selected{{end}}>{{.}}</option>{{end}}
+    {{range .Topics}}<option value="{{.}}" {{if eq . $.SelectedTopic}}selected{{end}}>{{.}}</option>{{end}}
   </select>
   <button type="submit">Filter</button>
 </form>
 
-<h2>Due now</h2>
-{{template "due-table" .Items}}
+<div class="section-card">
+  <h2>Due now</h2>
+  {{template "due-table" .DueTable}}
+</div>
 
 <div class="muted-section">
   <h2>Upcoming (next 7 days)</h2>

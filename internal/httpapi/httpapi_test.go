@@ -57,18 +57,25 @@ func doGet(t *testing.T, h http.Handler, target string) *httptest.ResponseRecord
 	return rec
 }
 
-func TestHome_ShowsDueCountAndEmptyState(t *testing.T) {
+// TestHome_EmptyLibraryShowsGetStartedCard asserts the first-run
+// experience: a brand-new self-hoster with an empty library sees a
+// "Get started" card pointing at Import/Add Problem instead of an
+// all-zero dashboard that gives no guidance on what to do next.
+func TestHome_EmptyLibraryShowsGetStartedCard(t *testing.T) {
 	h, _ := newTestServer(t)
 	rec := doGet(t, h, "/")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rec.Code)
 	}
 	body := rec.Body.String()
-	if !strings.Contains(body, "<strong>0</strong> due for review") {
-		t.Errorf("home missing zero due count:\n%s", body)
+	if !strings.Contains(body, "Get started") {
+		t.Errorf("home missing get-started empty state:\n%s", body)
 	}
-	if !strings.Contains(body, "Nothing due right now") {
-		t.Errorf("home missing empty-due message:\n%s", body)
+	if !strings.Contains(body, `href="/problems/import"`) {
+		t.Errorf("home empty state missing link to /problems/import:\n%s", body)
+	}
+	if strings.Contains(body, "<strong>0</strong> due for review") {
+		t.Errorf("home should not show the normal dashboard when empty:\n%s", body)
 	}
 }
 
@@ -206,6 +213,34 @@ func TestDue_ShowsUpcomingSectionViewOnly(t *testing.T) {
 	upcomingGradeForm := "/problems/" + strconv.FormatInt(upcoming.ID, 10) + "/grade"
 	if strings.Contains(body, upcomingGradeForm) {
 		t.Errorf("upcoming item must not be gradable, but found its grade form:\n%s", body)
+	}
+}
+
+// TestDue_UpcomingDifficultyColorsSurviveMutedSection guards against a
+// real regression: .muted-section (which wraps Upcoming) once set
+// `color` on every td/th at (0,1,1) specificity, silently overriding
+// .difficulty-Easy/Medium/Hard's own color at (0,1,0) — every difficulty
+// in Upcoming rendered as flat muted-gray text regardless of its actual
+// value. The class attribute alone doesn't prove the bug is fixed (it
+// was already correct even when the CSS cascade broke it), so this also
+// asserts .muted-section's own rule no longer competes on that property.
+func TestDue_UpcomingDifficultyColorsSurviveMutedSection(t *testing.T) {
+	h, svc := newTestServer(t)
+	ctx := t.Context()
+
+	if _, err := svc.AddProblem(ctx, service.AddProblemInput{
+		Title: "Upcoming Hard Problem", URL: "upcoming-hard-problem", Difficulty: service.DifficultyHard,
+		Grade: "Good", At: time.Now(),
+	}); err != nil {
+		t.Fatalf("AddProblem: unexpected err: %v", err)
+	}
+
+	body := doGet(t, h, "/due").Body.String()
+	if !strings.Contains(body, `class="difficulty-Hard"`) {
+		t.Errorf("upcoming row missing its difficulty class:\n%s", body)
+	}
+	if strings.Contains(body, `.muted-section th, .muted-section td { border-bottom: 1px solid var(--border); color:`) {
+		t.Errorf(".muted-section td/th must not set color - it out-specificities .difficulty-* and flattens every difficulty to muted-gray:\n%s", body)
 	}
 }
 
@@ -370,6 +405,39 @@ func TestLibrary_ShowsIntervalAndStatusColumns(t *testing.T) {
 	}
 }
 
+// TestStatusLabel_SurvivesDSTTransition guards against a real
+// regression: statusLabel/statusClass once computed the day-difference
+// as int(nextReview.Sub(today).Hours() / 24), a plain duration divide.
+// Across a DST transition that's wrong — reproduced manually with
+// America/New_York's 2024 spring-forward (midnight Mar 10 to midnight
+// Mar 11 is only a 23-hour wall-clock span), where int(23.0/24)
+// truncates to 0: a problem due tomorrow rendered as "Today (Due)".
+// main.go explicitly documents -tz as self-hoster-configurable, so any
+// DST-observing zone hit this, not just an edge case.
+func TestStatusLabel_SurvivesDSTTransition(t *testing.T) {
+	loc, err := time.LoadLocation("America/New_York")
+	if err != nil {
+		t.Skipf("America/New_York tzdata unavailable: %v", err)
+	}
+
+	today := time.Date(2024, 3, 10, 0, 0, 0, 0, loc)    // the spring-forward day itself
+	tomorrow := time.Date(2024, 3, 11, 0, 0, 0, 0, loc) // only a 23h wall-clock span away
+
+	if label := statusLabel(tomorrow, today); label != "Tomorrow" {
+		t.Errorf("statusLabel across DST spring-forward = %q, want %q", label, "Tomorrow")
+	}
+	if class := statusClass(tomorrow, today); class != "status-upcoming" {
+		t.Errorf("statusClass across DST spring-forward = %q, want %q", class, "status-upcoming")
+	}
+
+	// Fall-back (2024-11-03, a 25h wall-clock day) sanity check too.
+	fallToday := time.Date(2024, 11, 3, 0, 0, 0, 0, loc)
+	fallTomorrow := time.Date(2024, 11, 4, 0, 0, 0, 0, loc)
+	if label := statusLabel(fallTomorrow, fallToday); label != "Tomorrow" {
+		t.Errorf("statusLabel across DST fall-back = %q, want %q", label, "Tomorrow")
+	}
+}
+
 func TestLibrary_PaginationRespectsPageSize(t *testing.T) {
 	h, svc := newTestServer(t)
 	ctx := t.Context()
@@ -425,6 +493,75 @@ func TestLibrary_PaginationRespectsPageSize(t *testing.T) {
 	body = rec.Body.String()
 	if !strings.Contains(body, "Showing 11-15 of 15 problems") {
 		t.Errorf("out-of-range page should clamp to the last page:\n%s", body)
+	}
+}
+
+func TestDue_PaginatesDueNowIndependentlyOfUpcoming(t *testing.T) {
+	h, svc := newTestServer(t)
+	ctx := t.Context()
+
+	const dueTotal = 15
+	for i := 0; i < dueTotal; i++ {
+		title := "Due " + strconv.Itoa(i)
+		if _, err := svc.AddProblem(ctx, service.AddProblemInput{
+			Title: title, URL: "due-" + strconv.Itoa(i), Difficulty: service.DifficultyEasy,
+			Grade: "Good", At: time.Now().AddDate(0, 0, -10),
+		}); err != nil {
+			t.Fatalf("AddProblem(%s): unexpected err: %v", title, err)
+		}
+	}
+
+	rec := doGet(t, h, "/due?page_size=10&page=1")
+	body := rec.Body.String()
+	if !strings.Contains(body, "Showing 1-10 of 15 problems") {
+		t.Errorf("due-now page 1 of size 10 should show 1-10 of 15:\n%s", body)
+	}
+	if strings.Contains(body, `&laquo; Prev</a>`) {
+		t.Errorf("page 1 should not show a Prev link:\n%s", body)
+	}
+
+	rec = doGet(t, h, "/due?page_size=10&page=2")
+	body = rec.Body.String()
+	if !strings.Contains(body, "Showing 11-15 of 15 problems") {
+		t.Errorf("due-now page 2 of size 10 should show 11-15 of 15:\n%s", body)
+	}
+
+	// Out-of-range page clamps to the last page instead of a nonsensical range.
+	rec = doGet(t, h, "/due?page_size=10&page=99")
+	body = rec.Body.String()
+	if !strings.Contains(body, "Showing 11-15 of 15 problems") {
+		t.Errorf("out-of-range due-now page should clamp to the last page:\n%s", body)
+	}
+}
+
+func TestHome_PaginatesGlanceList(t *testing.T) {
+	h, svc := newTestServer(t)
+	ctx := t.Context()
+
+	const total = 15
+	for i := 0; i < total; i++ {
+		title := "Due " + strconv.Itoa(i)
+		if _, err := svc.AddProblem(ctx, service.AddProblemInput{
+			Title: title, URL: "due-" + strconv.Itoa(i), Difficulty: service.DifficultyEasy,
+			Grade: "Good", At: time.Now().AddDate(0, 0, -10),
+		}); err != nil {
+			t.Fatalf("AddProblem(%s): unexpected err: %v", title, err)
+		}
+	}
+
+	rec := doGet(t, h, "/?page_size=10&page=1")
+	body := rec.Body.String()
+	if !strings.Contains(body, "Showing 1-10 of 15 problems") {
+		t.Errorf("home page 1 of size 10 should show 1-10 of 15:\n%s", body)
+	}
+	if !strings.Contains(body, "<strong>15</strong> due for review") {
+		t.Errorf("home's due-count sentence should reflect the total (15), not just this page:\n%s", body)
+	}
+
+	rec = doGet(t, h, "/?page_size=10&page=2")
+	body = rec.Body.String()
+	if !strings.Contains(body, "Showing 11-15 of 15 problems") {
+		t.Errorf("home page 2 of size 10 should show 11-15 of 15:\n%s", body)
 	}
 }
 
@@ -491,7 +628,7 @@ func TestGradeExistingProblem_UpdatesReviewStateAndRedirects(t *testing.T) {
 	// own tests; here it's enough to prove the grade actually reached
 	// RecordReview (not just a no-op redirect) — the problem should no
 	// longer show as due immediately after being graded.
-	due, err := svc.RecommendDue(ctx, nil)
+	due, _, err := svc.RecommendDue(ctx, nil, 100, 0)
 	if err != nil {
 		t.Fatalf("RecommendDue: unexpected err: %v", err)
 	}
@@ -499,6 +636,93 @@ func TestGradeExistingProblem_UpdatesReviewStateAndRedirects(t *testing.T) {
 		if d.ID == problem.ID {
 			t.Fatalf("problem still shows as due right after being graded: %+v", d)
 		}
+	}
+}
+
+func TestGrade_HtmxRefreshesStatsAndNavPillOutOfBand(t *testing.T) {
+	h, svc := newTestServer(t)
+	ctx := t.Context()
+
+	overdueProblem := func(title, slug string) int64 {
+		t.Helper()
+		p, err := svc.AddProblem(ctx, service.AddProblemInput{
+			Title: title, URL: slug, Difficulty: service.DifficultyEasy,
+			Grade: "Good", At: time.Now().AddDate(0, 0, -10),
+		})
+		if err != nil {
+			t.Fatalf("AddProblem(%s): unexpected err: %v", title, err)
+		}
+		return p.ID
+	}
+
+	toGrade := overdueProblem("Overdue A", "overdue-a")
+	overdueProblem("Overdue B", "overdue-b")
+
+	before := doGet(t, h, "/due").Body.String()
+	if !strings.Contains(before, `id="due-today-count" class="stat-number">2<`) {
+		t.Fatalf("expected 2 due before grading:\n%s", before)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/problems/"+strconv.FormatInt(toGrade, 10)+"/grade",
+		strings.NewReader(url.Values{"grade": {"Good"}, "topic": {""}}.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("HX-Request", "true")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	body := rec.Body.String()
+	if !strings.Contains(body, "✓ Graded") {
+		t.Errorf("htmx grade response missing the graded-badge fragment:\n%s", body)
+	}
+	if !strings.Contains(body, `id="due-today-count" class="stat-number" hx-swap-oob="true">1<`) {
+		t.Errorf("htmx grade response missing the OOB-updated Due Today count (want 1):\n%s", body)
+	}
+	if !strings.Contains(body, `id="overdue-count" class="stat-number" hx-swap-oob="true">1<`) {
+		t.Errorf("htmx grade response missing the OOB-updated Overdue count (want 1):\n%s", body)
+	}
+	if !strings.Contains(body, `id="nav-due-count" href="/due" class="due-pill" hx-swap-oob="true">1 due today<`) {
+		t.Errorf("htmx grade response missing the OOB-updated nav due-pill (want 1):\n%s", body)
+	}
+}
+
+func TestGrade_HtmxOOBStatsRespectTopicFilter(t *testing.T) {
+	h, svc := newTestServer(t)
+	ctx := t.Context()
+
+	graphs, err := svc.AddProblem(ctx, service.AddProblemInput{
+		Title: "Number of Islands", URL: "number-of-islands", Difficulty: service.DifficultyMedium,
+		Topics: []string{"Graphs"}, Grade: "Good", At: time.Now().AddDate(0, 0, -10),
+	})
+	if err != nil {
+		t.Fatalf("AddProblem: unexpected err: %v", err)
+	}
+	if _, err := svc.AddProblem(ctx, service.AddProblemInput{
+		Title: "Two Sum", URL: "two-sum", Difficulty: service.DifficultyEasy,
+		Topics: []string{"Arrays & Hashing"}, Grade: "Good", At: time.Now().AddDate(0, 0, -10),
+	}); err != nil {
+		t.Fatalf("AddProblem: unexpected err: %v", err)
+	}
+
+	// Grading the sole Graphs-tagged problem, filtered to Graphs: the
+	// page-scoped stats should drop to 0 (nothing else tagged Graphs is
+	// due), but the global nav pill should still show 1 (the untouched
+	// Arrays & Hashing problem is still due).
+	req := httptest.NewRequest(http.MethodPost, "/problems/"+strconv.FormatInt(graphs.ID, 10)+"/grade",
+		strings.NewReader(url.Values{"grade": {"Good"}, "topic": {"Graphs"}}.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("HX-Request", "true")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	body := rec.Body.String()
+	if !strings.Contains(body, `id="due-today-count" class="stat-number" hx-swap-oob="true">0<`) {
+		t.Errorf("topic-scoped Due Today should be 0 after grading the only Graphs problem:\n%s", body)
+	}
+	if !strings.Contains(body, `id="overdue-count" class="stat-number" hx-swap-oob="true">0<`) {
+		t.Errorf("topic-scoped Overdue should be 0 after grading the only Graphs problem:\n%s", body)
+	}
+	if !strings.Contains(body, `id="nav-due-count" href="/due" class="due-pill" hx-swap-oob="true">1 due today<`) {
+		t.Errorf("global nav pill should still show 1 (Arrays & Hashing problem untouched):\n%s", body)
 	}
 }
 

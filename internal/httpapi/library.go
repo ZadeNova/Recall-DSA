@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"strconv"
 	"time"
 
 	"github.com/ZadeNova/recall-dsa/internal/service"
@@ -20,12 +19,7 @@ type libraryRow struct {
 	StatusClass string
 }
 
-const (
-	defaultLibraryPageSize = 25
-	defaultLibrarySort     = "next_review"
-)
-
-var validLibraryPageSizes = map[int]bool{10: true, 25: true, 50: true}
+const defaultLibrarySort = "next_review"
 
 type libraryViewData struct {
 	Topics             []string
@@ -39,13 +33,7 @@ type libraryViewData struct {
 	TotalTracked int
 	Difficulty   service.DifficultyCounts
 
-	Page        int
-	PageSize    int
-	TotalCount  int
-	TotalPages  int
-	ShowingText string
-	PrevURL     string
-	NextURL     string
+	Page pageInfo
 }
 
 // handleLibrary is SPEC.md §7's library view: every logged problem,
@@ -59,8 +47,6 @@ func (s *Server) handleLibrary(w http.ResponseWriter, r *http.Request) {
 	data := libraryViewData{
 		Difficulties: []service.Difficulty{service.DifficultyEasy, service.DifficultyMedium, service.DifficultyHard},
 		Sort:         defaultLibrarySort,
-		PageSize:     defaultLibraryPageSize,
-		Page:         1,
 	}
 	filter := service.ListProblemsFilter{}
 
@@ -82,60 +68,41 @@ func (s *Server) handleLibrary(w http.ResponseWriter, r *http.Request) {
 	}
 	filter.Sort = data.Sort
 
-	if v, err := strconv.Atoi(q.Get("page_size")); err == nil && validLibraryPageSizes[v] {
-		data.PageSize = v
-	}
-	if v, err := strconv.Atoi(q.Get("page")); err == nil && v > 0 {
-		data.Page = v
-	}
-	filter.Limit = data.PageSize
-	filter.Offset = (data.Page - 1) * data.PageSize
+	page := pageFromQuery(q.Get("page"))
+	pageSize := pageSizeFromQuery(q.Get("page_size"))
+	filter.Limit = pageSize
+	filter.Offset = (page - 1) * pageSize
 
 	items, total, err := s.svc.ListLibrary(ctx, filter)
 	if err != nil {
 		s.renderError(w, r, http.StatusInternalServerError, err)
 		return
 	}
-	data.TotalPages = (total + data.PageSize - 1) / data.PageSize
-	if data.TotalPages == 0 {
-		data.TotalPages = 1
-	}
 	// A requested page beyond the last one (e.g. a stale bookmarked/Next
 	// link after items were deleted) would otherwise produce a
 	// nonsensical "Showing 26-3 of 3" — clamp and re-query once rather
 	// than displaying that.
-	if data.Page > data.TotalPages {
-		data.Page = data.TotalPages
-		filter.Offset = (data.Page - 1) * data.PageSize
+	if totalPages := totalPagesFor(total, pageSize); page > totalPages {
+		page = totalPages
+		filter.Offset = (page - 1) * pageSize
 		if items, total, err = s.svc.ListLibrary(ctx, filter); err != nil {
 			s.renderError(w, r, http.StatusInternalServerError, err)
 			return
 		}
 	}
-	data.TotalCount = total
-	data.ShowingText = showingText(data.Page, data.PageSize, total)
-	libraryPageURL := func(page int) string {
-		v := url.Values{}
-		if data.Search != "" {
-			v.Set("q", data.Search)
-		}
-		if data.SelectedTopic != "" {
-			v.Set("topic", data.SelectedTopic)
-		}
-		if data.SelectedDifficulty != "" {
-			v.Set("difficulty", string(data.SelectedDifficulty))
-		}
-		v.Set("sort", data.Sort)
-		v.Set("page_size", strconv.Itoa(data.PageSize))
-		v.Set("page", strconv.Itoa(page))
-		return "/library?" + v.Encode()
+
+	extra := url.Values{}
+	if data.Search != "" {
+		extra.Set("q", data.Search)
 	}
-	if data.Page > 1 {
-		data.PrevURL = libraryPageURL(data.Page - 1)
+	if data.SelectedTopic != "" {
+		extra.Set("topic", data.SelectedTopic)
 	}
-	if data.Page < data.TotalPages {
-		data.NextURL = libraryPageURL(data.Page + 1)
+	if data.SelectedDifficulty != "" {
+		extra.Set("difficulty", string(data.SelectedDifficulty))
 	}
+	extra.Set("sort", data.Sort)
+	data.Page = buildPageInfo("/library", extra, "page", "page_size", page, pageSize, total)
 
 	today := s.svc.Today()
 	for _, item := range items {
@@ -173,7 +140,7 @@ func (s *Server) handleLibrary(w http.ResponseWriter, r *http.Request) {
 // always has one (AddProblem requires a first grade at creation), so
 // there's no "unscheduled" case to handle.
 func statusLabel(nextReview, today time.Time) string {
-	days := int(nextReview.Sub(today).Hours() / 24)
+	days := daysBetween(nextReview, today)
 	switch {
 	case days < 0:
 		return fmt.Sprintf("Overdue %dd", -days)
@@ -187,7 +154,7 @@ func statusLabel(nextReview, today time.Time) string {
 }
 
 func statusClass(nextReview, today time.Time) string {
-	days := int(nextReview.Sub(today).Hours() / 24)
+	days := daysBetween(nextReview, today)
 	switch {
 	case days < 0:
 		return "status-overdue"
@@ -198,17 +165,20 @@ func statusClass(nextReview, today time.Time) string {
 	}
 }
 
-// showingText renders the "Showing X-Y of N" range label for the
-// current page — N=0 (no matches) is rendered distinctly since there's
-// no meaningful X-Y range in that case.
-func showingText(page, pageSize, total int) string {
-	if total == 0 {
-		return "No problems match"
-	}
-	from := (page-1)*pageSize + 1
-	to := from + pageSize - 1
-	if to > total {
-		to = total
-	}
-	return fmt.Sprintf("Showing %d-%d of %d problems", from, to, total)
+// daysBetween computes the calendar-day difference between two
+// same-location midnight timestamps by stripping location entirely
+// (comparing each side's Y/M/D as plain UTC dates) rather than dividing
+// their wall-clock duration by 24 hours. A duration-based diff breaks
+// across a DST transition: e.g. in America/New_York, midnight Mar 10
+// 2024 to midnight Mar 11 2024 is only a 23-hour wall-clock span (the
+// spring-forward transition falls inside it), so
+// int(23.0/24) truncates to 0 — a problem due tomorrow would render as
+// "Today (Due)". Comparing calendar dates directly is exact regardless
+// of the offset either timestamp happens to carry.
+func daysBetween(a, b time.Time) int {
+	ay, am, ad := a.Date()
+	by, bm, bd := b.Date()
+	utcA := time.Date(ay, am, ad, 0, 0, 0, 0, time.UTC)
+	utcB := time.Date(by, bm, bd, 0, 0, 0, 0, time.UTC)
+	return int(utcA.Sub(utcB).Hours() / 24)
 }

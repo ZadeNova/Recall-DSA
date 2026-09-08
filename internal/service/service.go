@@ -7,9 +7,54 @@ package service
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"time"
+
+	"modernc.org/sqlite"
+	sqlite3 "modernc.org/sqlite/lib"
 )
+
+// ErrDuplicateTopic and ErrDuplicateSlug are returned (wrapped, so
+// errors.Is still matches) when a write would violate a UNIQUE
+// constraint that corresponds to a routine, expected user mistake — a
+// topic name or problem URL that already exists — rather than a genuine
+// system failure. Callers can format these directly: their Error() text
+// is plain English, not SQL vocabulary, because CreateTopic/RenameTopic/
+// UpdateProblem detect this specific case (see isUniqueConstraintErr)
+// and translate it before it reaches the HTTP layer, instead of letting
+// whatever the SQLite driver says leak straight into the page — a
+// duplicate name is something a user does routinely, not a bug.
+var (
+	ErrDuplicateTopic = errors.New("a topic with that name already exists")
+	ErrDuplicateSlug  = errors.New("a problem with that URL already exists")
+)
+
+// isUniqueConstraintErr reports whether err is specifically a UNIQUE
+// constraint violation, checked by SQLite result code (2067) rather than
+// matching on the error's text — the message format isn't a stable API
+// across driver versions, but the numeric code is part of SQLite's own
+// documented result-code table.
+func isUniqueConstraintErr(err error) bool {
+	var sqliteErr *sqlite.Error
+	return errors.As(err, &sqliteErr) && sqliteErr.Code() == sqlite3.SQLITE_CONSTRAINT_UNIQUE
+}
+
+// requireRowsAffected returns a wrapped sql.ErrNoRows if res reports zero
+// rows affected — the shared check behind every ID-keyed UPDATE/DELETE
+// in this package (UpdateProblem, DeleteProblem, RenameTopic,
+// DeleteTopic), so acting on an ID that doesn't exist fails the same way
+// everywhere instead of silently "succeeding" at doing nothing.
+func requireRowsAffected(res sql.Result, notFoundMsg string) error {
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("service: check rows affected: %w", err)
+	}
+	if n == 0 {
+		return fmt.Errorf("%s: %w", notFoundMsg, sql.ErrNoRows)
+	}
+	return nil
+}
 
 // querier is satisfied by both *sql.DB and *sql.Tx, so the same
 // query/exec helpers work whether called standalone or inside a

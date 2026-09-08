@@ -8,6 +8,39 @@ import (
 	"github.com/ZadeNova/recall-dsa/internal/scheduler"
 )
 
+// TestListLibrary_ZeroLimitMeansUnlimited guards against a real
+// regression: a zero-value ListProblemsFilter{} (no Limit set) used to
+// pass LIMIT 0 straight into SQL, silently returning 0 items while total
+// still reported every matching row — "0 items, total=3" reads as a bug,
+// not as "no pagination requested." Limit <= 0 must mean "return
+// everything," matching how a zero-value filter reads everywhere else
+// (no filtering specified).
+func TestListLibrary_ZeroLimitMeansUnlimited(t *testing.T) {
+	s := newTestService(t)
+	ctx := context.Background()
+	at := time.Now()
+
+	for i, slug := range []string{"a", "b", "c"} {
+		if _, err := s.AddProblem(ctx, AddProblemInput{
+			Title: "Problem", URL: slug, Difficulty: DifficultyEasy,
+			Grade: scheduler.Good, At: at,
+		}); err != nil {
+			t.Fatalf("AddProblem(%d): unexpected err: %v", i, err)
+		}
+	}
+
+	items, total, err := s.ListLibrary(ctx, ListProblemsFilter{})
+	if err != nil {
+		t.Fatalf("ListLibrary: unexpected err: %v", err)
+	}
+	if total != 3 {
+		t.Fatalf("total = %d, want 3", total)
+	}
+	if len(items) != 3 {
+		t.Errorf("len(items) = %d, want 3 (zero Limit should mean unlimited, not zero)", len(items))
+	}
+}
+
 func TestListLibrary_SearchSortAndPagination(t *testing.T) {
 	s := newTestService(t)
 	ctx := context.Background()
@@ -119,6 +152,47 @@ func TestListLibrary_SearchSortAndPagination(t *testing.T) {
 			}
 		}
 	})
+}
+
+// TestListLibrary_FiltersByTopic covers ListLibrary's topic filter,
+// which (unlike Difficulty, already covered above) had no direct test —
+// its only prior coverage was via the now-deleted, production-unused
+// ListProblems, which had its own separate, parallel implementation of
+// this same filter.
+func TestListLibrary_FiltersByTopic(t *testing.T) {
+	s := newTestService(t)
+	ctx := context.Background()
+	at := time.Now()
+
+	mustAdd := func(title, slug string, topics []string) {
+		t.Helper()
+		if _, err := s.AddProblem(ctx, AddProblemInput{
+			Title: title, URL: slug, Difficulty: DifficultyEasy, Topics: topics,
+			Grade: scheduler.Good, At: at,
+		}); err != nil {
+			t.Fatalf("AddProblem(%s): unexpected err: %v", title, err)
+		}
+	}
+	mustAdd("Two Sum", "two-sum", []string{"Arrays & Hashing"})
+	mustAdd("Best Time to Buy and Sell Stock", "best-time", []string{"Arrays & Hashing", "Sliding Window"})
+	mustAdd("Climbing Stairs", "climbing-stairs", []string{"1-D Dynamic Programming"})
+
+	arraysTopic := "Arrays & Hashing"
+	items, total, err := s.ListLibrary(ctx, ListProblemsFilter{Topic: &arraysTopic, Limit: 10})
+	if err != nil {
+		t.Fatalf("ListLibrary: unexpected err: %v", err)
+	}
+	if total != 2 {
+		t.Errorf("total = %d, want 2 (Two Sum, Best Time to Buy and Sell Stock)", total)
+	}
+	if len(items) != 2 {
+		t.Errorf("len(items) = %d, want 2", len(items))
+	}
+	for _, it := range items {
+		if it.Slug == "climbing-stairs" {
+			t.Error("climbing-stairs (no Arrays & Hashing tag) should not match the topic filter")
+		}
+	}
 }
 
 func sluglist(items []DueItem) []string {

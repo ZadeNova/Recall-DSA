@@ -83,9 +83,9 @@ func TestImportPreviewThenCommit_FullFlow(t *testing.T) {
 		t.Errorf("commit result missing expected count:\n%s", commitBody)
 	}
 
-	problems, err := svc.ListProblems(ctx, service.ListProblemsFilter{})
+	problems, _, err := svc.ListLibrary(ctx, service.ListProblemsFilter{Limit: 100})
 	if err != nil {
-		t.Fatalf("ListProblems: unexpected err: %v", err)
+		t.Fatalf("ListLibrary: unexpected err: %v", err)
 	}
 	if len(problems) != 2 {
 		t.Fatalf("len(problems) = %d, want 2", len(problems))
@@ -156,9 +156,9 @@ func TestImportPreview_FlagsProtectedRow(t *testing.T) {
 		t.Fatalf("setup commit status = %d, want 200:\n%s", commitRec.Code, commitRec.Body.String())
 	}
 
-	problems, err := svc.ListProblems(ctx, service.ListProblemsFilter{})
+	problems, _, err := svc.ListLibrary(ctx, service.ListProblemsFilter{Limit: 100})
 	if err != nil {
-		t.Fatalf("ListProblems: unexpected err: %v", err)
+		t.Fatalf("ListLibrary: unexpected err: %v", err)
 	}
 	if len(problems) != 1 {
 		t.Fatalf("setup: len(problems) = %d, want 1", len(problems))
@@ -195,9 +195,9 @@ func TestImportCommit_RejectsBatchWithErrors(t *testing.T) {
 		t.Fatalf("commit status = %d, want 422:\n%s", rec.Code, rec.Body.String())
 	}
 
-	problems, err := svc.ListProblems(ctx, service.ListProblemsFilter{})
+	problems, _, err := svc.ListLibrary(ctx, service.ListProblemsFilter{Limit: 100})
 	if err != nil {
-		t.Fatalf("ListProblems: unexpected err: %v", err)
+		t.Fatalf("ListLibrary: unexpected err: %v", err)
 	}
 	if len(problems) != 0 {
 		t.Fatalf("len(problems) = %d, want 0 (a batch with errors must not commit anything)", len(problems))

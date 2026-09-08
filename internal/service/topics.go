@@ -2,7 +2,9 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strings"
 )
 
 // ListTopics returns every topic, alphabetically.
@@ -63,8 +65,15 @@ func (s *Service) TopicCounts(ctx context.Context) ([]TopicCount, error) {
 // NOCASE), so a duplicate under different casing surfaces here as an
 // error rather than silently forking the tag.
 func (s *Service) CreateTopic(ctx context.Context, name string) (Topic, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return Topic{}, errors.New("service: topic name is empty")
+	}
 	res, err := s.db.ExecContext(ctx, `INSERT INTO topics (name) VALUES (?)`, name)
 	if err != nil {
+		if isUniqueConstraintErr(err) {
+			return Topic{}, fmt.Errorf("%w: %q", ErrDuplicateTopic, name)
+		}
 		return Topic{}, fmt.Errorf("service: create topic %q: %w", name, err)
 	}
 	id, err := res.LastInsertId()
@@ -77,18 +86,30 @@ func (s *Service) CreateTopic(ctx context.Context, name string) (Topic, error) {
 // RenameTopic changes a topic's display name in place; existing
 // problem_topics associations are untouched since they reference the id.
 func (s *Service) RenameTopic(ctx context.Context, id int64, newName string) error {
-	if _, err := s.db.ExecContext(ctx, `UPDATE topics SET name = ? WHERE id = ?`, newName, id); err != nil {
+	newName = strings.TrimSpace(newName)
+	if newName == "" {
+		return errors.New("service: topic name is empty")
+	}
+	res, err := s.db.ExecContext(ctx, `UPDATE topics SET name = ? WHERE id = ?`, newName, id)
+	if err != nil {
+		if isUniqueConstraintErr(err) {
+			return fmt.Errorf("%w: %q", ErrDuplicateTopic, newName)
+		}
 		return fmt.Errorf("service: rename topic %d: %w", id, err)
 	}
-	return nil
+	return requireRowsAffected(res, fmt.Sprintf("service: topic %d", id))
 }
 
 // DeleteTopic removes a topic. Per SPEC.md §8, this only drops the tag
 // association (problem_topics rows, via ON DELETE CASCADE) — the
 // problems themselves are never touched.
 func (s *Service) DeleteTopic(ctx context.Context, id int64) error {
-	if _, err := s.db.ExecContext(ctx, `DELETE FROM topics WHERE id = ?`, id); err != nil {
+	res, err := s.db.ExecContext(ctx, `DELETE FROM topics WHERE id = ?`, id)
+	if err != nil {
 		return fmt.Errorf("service: delete topic %d: %w", id, err)
+	}
+	if err := requireRowsAffected(res, fmt.Sprintf("service: topic %d", id)); err != nil {
+		return err
 	}
 	return nil
 }

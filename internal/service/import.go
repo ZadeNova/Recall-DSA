@@ -37,25 +37,62 @@ const (
 	SlugProtected                       // exists with real review history — bulk import will leave it untouched
 )
 
-// CheckSlug reports what bulk import would do with slug, without writing
-// anything — used by the import preview to warn about rows that would
-// otherwise silently reset real review progress (see BulkImportProblems).
-func (s *Service) CheckSlug(ctx context.Context, slug string) (SlugStatus, error) {
-	problemID, err := findProblemIDBySlug(ctx, s.db, slug)
+// CheckSlugs reports what bulk import would do with each of the given
+// slugs, without writing anything — used by the import preview to warn
+// about rows that would otherwise silently reset real review progress
+// (see BulkImportProblems). Every input slug is present in the result:
+// each starts pre-seeded as SlugNew, then gets overwritten for whichever
+// ones a matching problem actually exists for.
+//
+// This batches all slugs into one query rather than checking each one
+// individually (that was this function's original shape, one query per
+// slug plus one more to count its attempts) — for a real ~190-row
+// import, looping the single-slug version cost on the order of ~380
+// queries per preview render, and handleImportCommit re-validates the
+// same input before committing, so one import cycle cost roughly 760
+// queries before a single row was written. See
+// internal/service.attachTopicsToItems for the same batching pattern
+// applied to a different N+1.
+func (s *Service) CheckSlugs(ctx context.Context, slugs []string) (map[string]SlugStatus, error) {
+	result := make(map[string]SlugStatus, len(slugs))
+	for _, slug := range slugs {
+		result[slug] = SlugNew
+	}
+	if len(slugs) == 0 {
+		return result, nil
+	}
+
+	placeholders := make([]string, len(slugs))
+	args := make([]any, len(slugs))
+	for i, slug := range slugs {
+		placeholders[i] = "?"
+		args[i] = slug
+	}
+
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT p.slug, COUNT(a.id)
+		FROM problems p
+		LEFT JOIN attempts a ON a.problem_id = p.id
+		WHERE p.slug IN (`+strings.Join(placeholders, ",")+`)
+		GROUP BY p.slug`, args...)
 	if err != nil {
-		return SlugNew, err
+		return nil, fmt.Errorf("service: batch check slugs: %w", err)
 	}
-	if problemID == 0 {
-		return SlugNew, nil
+	defer rows.Close()
+
+	for rows.Next() {
+		var slug string
+		var count int
+		if err := rows.Scan(&slug, &count); err != nil {
+			return nil, fmt.Errorf("service: scan batched slug check: %w", err)
+		}
+		if count > 1 {
+			result[slug] = SlugProtected
+		} else {
+			result[slug] = SlugSafeToRefresh
+		}
 	}
-	n, err := attemptCount(ctx, s.db, problemID)
-	if err != nil {
-		return SlugNew, err
-	}
-	if n > 1 {
-		return SlugProtected, nil
-	}
-	return SlugSafeToRefresh, nil
+	return result, rows.Err()
 }
 
 func attemptCount(ctx context.Context, q querier, problemID int64) (int, error) {

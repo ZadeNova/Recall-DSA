@@ -2,6 +2,9 @@ package httpapi
 
 import (
 	"context"
+	"database/sql"
+	"errors"
+	"fmt"
 	"net/http"
 	"sort"
 
@@ -110,6 +113,10 @@ func (s *Server) handleRenameTopic(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.svc.RenameTopic(r.Context(), id, r.PostForm.Get("name")); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			s.renderError(w, r, http.StatusNotFound, fmt.Errorf("topic %d not found", id))
+			return
+		}
 		s.renderTopicsError(w, r, err)
 		return
 	}
@@ -125,6 +132,10 @@ func (s *Server) handleDeleteTopic(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.svc.DeleteTopic(r.Context(), id); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			s.renderError(w, r, http.StatusNotFound, fmt.Errorf("topic %d not found", id))
+			return
+		}
 		s.renderError(w, r, http.StatusInternalServerError, err)
 		return
 	}

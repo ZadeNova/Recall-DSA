@@ -168,6 +168,10 @@ func (s *Server) handleUpdateProblem(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.svc.UpdateProblem(r.Context(), id, input); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			s.renderError(w, r, http.StatusNotFound, fmt.Errorf("problem %d not found", id))
+			return
+		}
 		names, nameErr := s.topicNames(r)
 		if nameErr != nil {
 			s.renderError(w, r, http.StatusInternalServerError, nameErr)
@@ -194,6 +198,10 @@ func (s *Server) handleDeleteProblem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.svc.DeleteProblem(r.Context(), id); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			s.renderError(w, r, http.StatusNotFound, fmt.Errorf("problem %d not found", id))
+			return
+		}
 		s.renderError(w, r, http.StatusInternalServerError, err)
 		return
 	}

@@ -14,6 +14,9 @@ import (
 //go:embed schema.sql
 var schemaSQL string
 
+//go:embed seed_topics.sql
+var seedTopicsSQL string
+
 // Open opens (creating if needed) the SQLite database at path, configures
 // it per SPEC.md §10 — WAL mode, foreign-key enforcement, and a
 // busy_timeout as cheap insurance against an incidental overlapping
@@ -39,5 +42,42 @@ func Open(path string) (*sql.DB, error) {
 		return nil, fmt.Errorf("db: apply schema: %w", err)
 	}
 
+	if err := seedTopicsIfEmpty(conn); err != nil {
+		conn.Close()
+		return nil, err
+	}
+
 	return conn, nil
+}
+
+// seedTopicsIfEmpty runs seedTopicsSQL only the first time this database
+// is ever opened (topics table still empty) — deliberately NOT run on
+// every startup the way schema.sql is. Unlike schema.sql's tables/
+// indexes, seeding isn't idempotent in the sense that matters here: if a
+// user deliberately deletes a seeded topic via the Topics page and this
+// ran unconditionally (e.g. via INSERT OR IGNORE) on every restart, that
+// deletion would be silently undone the next time the app starts,
+// because the row would no longer exist to conflict with. Gating on "is
+// the table currently empty" only seeds a genuinely fresh database.
+//
+// One known edge case: a user who deletes every single topic (not just
+// one) would see the full seed list return on next restart, since an
+// empty table looks the same whether it's brand new or emptied by hand.
+// Tracking "has this database ever been seeded" independent of the
+// table's current contents would need a separate marker (e.g. a small
+// metadata table) — not worth the extra schema for an edge case this
+// narrow, when the ordinary case (delete the few topics you don't want)
+// already works correctly.
+func seedTopicsIfEmpty(conn *sql.DB) error {
+	var count int
+	if err := conn.QueryRow(`SELECT COUNT(*) FROM topics`).Scan(&count); err != nil {
+		return fmt.Errorf("db: check existing topics: %w", err)
+	}
+	if count > 0 {
+		return nil
+	}
+	if _, err := conn.Exec(seedTopicsSQL); err != nil {
+		return fmt.Errorf("db: seed topics: %w", err)
+	}
+	return nil
 }

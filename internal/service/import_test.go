@@ -27,9 +27,9 @@ func TestBulkImportProblems_CreatesGradesHardAndStaggersReviewDates(t *testing.T
 		t.Fatalf("result = %+v, want Created=3 Merged=0", result)
 	}
 
-	problems, err := s.ListProblems(ctx, ListProblemsFilter{})
+	problems, _, err := s.ListLibrary(ctx, ListProblemsFilter{Limit: 100})
 	if err != nil {
-		t.Fatalf("ListProblems: unexpected err: %v", err)
+		t.Fatalf("ListLibrary: unexpected err: %v", err)
 	}
 	if len(problems) != 3 {
 		t.Fatalf("len(problems) = %d, want 3", len(problems))
@@ -75,9 +75,9 @@ func TestBulkImportProblems_ReimportMergesRatherThanDuplicates(t *testing.T) {
 		t.Fatalf("result = %+v, want Created=0 Merged=1 (dedupe on slug)", result)
 	}
 
-	problems, err := s.ListProblems(ctx, ListProblemsFilter{})
+	problems, _, err := s.ListLibrary(ctx, ListProblemsFilter{Limit: 100})
 	if err != nil {
-		t.Fatalf("ListProblems: unexpected err: %v", err)
+		t.Fatalf("ListLibrary: unexpected err: %v", err)
 	}
 	if len(problems) != 1 {
 		t.Fatalf("len(problems) = %d, want 1 (re-import should not duplicate)", len(problems))
@@ -110,9 +110,9 @@ func TestBulkImportProblems_ProtectsProgressOnThirdImport(t *testing.T) {
 		t.Fatalf("second import result = %+v, want Merged=1 Skipped=0 (only its own original attempt so far)", second)
 	}
 
-	problems, err := s.ListProblems(ctx, ListProblemsFilter{})
+	problems, _, err := s.ListLibrary(ctx, ListProblemsFilter{Limit: 100})
 	if err != nil {
-		t.Fatalf("ListProblems: unexpected err: %v", err)
+		t.Fatalf("ListLibrary: unexpected err: %v", err)
 	}
 	var problemID int64
 	for _, p := range problems {
@@ -162,9 +162,9 @@ func TestBulkImportProblems_ProtectsManuallyGradedProblem(t *testing.T) {
 		t.Fatalf("import: unexpected err: %v", err)
 	}
 
-	problems, err := s.ListProblems(ctx, ListProblemsFilter{})
+	problems, _, err := s.ListLibrary(ctx, ListProblemsFilter{Limit: 100})
 	if err != nil {
-		t.Fatalf("ListProblems: unexpected err: %v", err)
+		t.Fatalf("ListLibrary: unexpected err: %v", err)
 	}
 	problemID := problems[0].ID
 
@@ -306,3 +306,51 @@ func TestBulkImportProblems_StaggerSpreadsAcrossTwoWeeks(t *testing.T) {
 		t.Errorf("spread = %v days, want roughly 10-14 (SPEC.md §9: stagger across ~2 weeks)", spread)
 	}
 }
+
+// TestCheckSlugs_BatchedMixOfNewSafeAndProtected asserts CheckSlugs
+// correctly classifies a mix of statuses in a single call — the whole
+// point of batching everything into one query is that it must still
+// distinguish each slug individually, not just prove "the query didn't
+// error."
+func TestCheckSlugs_BatchedMixOfNewSafeAndProtected(t *testing.T) {
+	s := newTestService(t)
+	ctx := context.Background()
+	fixedClock(s, time.Date(2026, 1, 1, 9, 0, 0, 0, time.UTC))
+
+	// "untouched" gets only its own single import attempt: safe to refresh.
+	if _, err := s.BulkImportProblems(ctx, []BulkImportRow{
+		{Title: "Untouched", URL: "untouched", Difficulty: DifficultyEasy, Topics: []string{"Arrays"}},
+	}, 0); err != nil {
+		t.Fatalf("import untouched: unexpected err: %v", err)
+	}
+
+	// "progressed" gets a second, real attempt beyond its import: protected.
+	if _, err := s.BulkImportProblems(ctx, []BulkImportRow{
+		{Title: "Progressed", URL: "progressed", Difficulty: DifficultyEasy, Topics: []string{"Arrays"}},
+	}, 0); err != nil {
+		t.Fatalf("import progressed: unexpected err: %v", err)
+	}
+	progressed, _, err := s.ListLibrary(ctx, ListProblemsFilter{Search: strPtr("Progressed"), Limit: 10})
+	if err != nil {
+		t.Fatalf("ListLibrary: unexpected err: %v", err)
+	}
+	if _, err := s.RecordReview(ctx, progressed[0].ID, "Good", s.now()); err != nil {
+		t.Fatalf("RecordReview: unexpected err: %v", err)
+	}
+
+	statuses, err := s.CheckSlugs(ctx, []string{"untouched", "progressed", "brand-new"})
+	if err != nil {
+		t.Fatalf("CheckSlugs: unexpected err: %v", err)
+	}
+	if statuses["untouched"] != SlugSafeToRefresh {
+		t.Errorf(`statuses["untouched"] = %v, want SlugSafeToRefresh`, statuses["untouched"])
+	}
+	if statuses["progressed"] != SlugProtected {
+		t.Errorf(`statuses["progressed"] = %v, want SlugProtected`, statuses["progressed"])
+	}
+	if statuses["brand-new"] != SlugNew {
+		t.Errorf(`statuses["brand-new"] = %v, want SlugNew`, statuses["brand-new"])
+	}
+}
+
+func strPtr(s string) *string { return &s }

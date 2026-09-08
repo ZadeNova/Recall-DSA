@@ -382,6 +382,42 @@ func TestLibrary_SearchFiltersByTitle(t *testing.T) {
 	}
 }
 
+// TestLibrary_PageSizeFormPreservesActiveFilters is the HTTP-level
+// counterpart to TestHiddenFieldsFrom_SortedAndFlattened: it exercises
+// the actual rendered page rather than the helper function directly,
+// confirming q/topic/sort all survive into the page-size form's hidden
+// fields when changing page size — the exact behavior only checked
+// manually with curl when the #7 pagination consolidation landed.
+func TestLibrary_PageSizeFormPreservesActiveFilters(t *testing.T) {
+	h, svc := newTestServer(t)
+	ctx := t.Context()
+
+	if _, err := svc.AddProblem(ctx, service.AddProblemInput{
+		Title: "Two Sum", URL: "two-sum", Difficulty: service.DifficultyEasy,
+		Topics: []string{"Arrays & Hashing"}, Grade: "Good", At: time.Now(),
+	}); err != nil {
+		t.Fatalf("AddProblem: unexpected err: %v", err)
+	}
+
+	body := doGet(t, h, "/library?q=Sum&topic=Arrays+%26+Hashing&sort=title").Body.String()
+	formStart := strings.Index(body, `class="page-size-form"`)
+	if formStart == -1 {
+		t.Fatalf("page-size-form not found in body:\n%s", body)
+	}
+	formEnd := strings.Index(body[formStart:], "</form>")
+	form := body[formStart : formStart+formEnd]
+
+	for _, want := range []string{
+		`name="q" value="Sum"`,
+		`name="topic" value="Arrays &amp; Hashing"`,
+		`name="sort" value="title"`,
+	} {
+		if !strings.Contains(form, want) {
+			t.Errorf("page-size form missing %q:\n%s", want, form)
+		}
+	}
+}
+
 func TestLibrary_ShowsIntervalAndStatusColumns(t *testing.T) {
 	h, svc := newTestServer(t)
 	ctx := t.Context()
@@ -604,6 +640,46 @@ func TestEditProblem_MissingIDReturns404(t *testing.T) {
 	rec := doGet(t, h, "/problems/999/edit")
 	if rec.Code != http.StatusNotFound {
 		t.Errorf("status = %d, want 404", rec.Code)
+	}
+}
+
+// TestUpdateProblem_MissingIDReturns404, TestDeleteProblem_MissingIDReturns404,
+// TestRenameTopic_MissingIDReturns404, and TestDeleteTopic_MissingIDReturns404
+// guard against a real regression: none of these four actions checked
+// whether anything actually matched the given ID, so POSTing to any of
+// them with a nonexistent ID used to redirect exactly as if the action
+// had succeeded, rather than surfacing that nothing happened.
+func TestUpdateProblem_MissingIDReturns404(t *testing.T) {
+	h, _ := newTestServer(t)
+	rec := doForm(t, h, http.MethodPost, "/problems/999/update", url.Values{
+		"title": {"Ghost"}, "url": {"ghost"}, "difficulty": {"Easy"},
+	})
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want 404:\n%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestDeleteProblem_MissingIDReturns404(t *testing.T) {
+	h, _ := newTestServer(t)
+	rec := doForm(t, h, http.MethodPost, "/problems/999/delete", url.Values{})
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want 404:\n%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestRenameTopic_MissingIDReturns404(t *testing.T) {
+	h, _ := newTestServer(t)
+	rec := doForm(t, h, http.MethodPost, "/topics/999/rename", url.Values{"name": {"New Name"}})
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want 404:\n%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestDeleteTopic_MissingIDReturns404(t *testing.T) {
+	h, _ := newTestServer(t)
+	rec := doForm(t, h, http.MethodPost, "/topics/999/delete", url.Values{})
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want 404:\n%s", rec.Code, rec.Body.String())
 	}
 }
 

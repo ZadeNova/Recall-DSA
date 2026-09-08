@@ -215,12 +215,18 @@ func (s *Service) UpdateProblem(ctx context.Context, problemID int64, input Upda
 	}
 
 	return s.withTx(ctx, func(tx *sql.Tx) error {
-		_, err := tx.ExecContext(ctx,
+		res, err := tx.ExecContext(ctx,
 			`UPDATE problems SET title = ?, url = ?, difficulty = ?, slug = ? WHERE id = ?`,
 			input.Title, canonicalURL(slug), input.Difficulty, slug, problemID,
 		)
 		if err != nil {
+			if isUniqueConstraintErr(err) {
+				return fmt.Errorf("%w: %q", ErrDuplicateSlug, input.URL)
+			}
 			return fmt.Errorf("service: update problem %d: %w", problemID, err)
+		}
+		if err := requireRowsAffected(res, fmt.Sprintf("service: problem %d", problemID)); err != nil {
+			return err
 		}
 		return replaceTopics(ctx, tx, problemID, input.Topics)
 	})
@@ -230,57 +236,9 @@ func (s *Service) UpdateProblem(ctx context.Context, problemID int64, input Upda
 // attempts and review_state rows (enforced by the schema's ON DELETE
 // CASCADE plus PRAGMA foreign_keys=ON in internal/db).
 func (s *Service) DeleteProblem(ctx context.Context, problemID int64) error {
-	if _, err := s.db.ExecContext(ctx, `DELETE FROM problems WHERE id = ?`, problemID); err != nil {
+	res, err := s.db.ExecContext(ctx, `DELETE FROM problems WHERE id = ?`, problemID)
+	if err != nil {
 		return fmt.Errorf("service: delete problem %d: %w", problemID, err)
 	}
-	return nil
-}
-
-// ListProblems powers the library view (SPEC.md §7): every logged
-// problem, optionally filtered by topic and/or difficulty.
-func (s *Service) ListProblems(ctx context.Context, filter ListProblemsFilter) ([]Problem, error) {
-	query := `SELECT DISTINCT p.id, p.title, p.url, p.difficulty, p.slug FROM problems p`
-	var args []any
-	var conditions []string
-
-	if filter.Topic != nil {
-		query += ` JOIN problem_topics pt ON pt.problem_id = p.id JOIN topics t ON t.id = pt.topic_id`
-		conditions = append(conditions, `t.name = ?`)
-		args = append(args, *filter.Topic)
-	}
-	if filter.Difficulty != nil {
-		conditions = append(conditions, `p.difficulty = ?`)
-		args = append(args, *filter.Difficulty)
-	}
-	if len(conditions) > 0 {
-		query += ` WHERE ` + strings.Join(conditions, " AND ")
-	}
-	query += ` ORDER BY p.title`
-
-	rows, err := s.db.QueryContext(ctx, query, args...)
-	if err != nil {
-		return nil, fmt.Errorf("service: list problems: %w", err)
-	}
-	defer rows.Close()
-
-	var problems []Problem
-	for rows.Next() {
-		var p Problem
-		if err := rows.Scan(&p.ID, &p.Title, &p.URL, &p.Difficulty, &p.Slug); err != nil {
-			return nil, fmt.Errorf("service: scan problem: %w", err)
-		}
-		problems = append(problems, p)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-
-	for i := range problems {
-		topics, err := loadProblemTopics(ctx, s.db, problems[i].ID)
-		if err != nil {
-			return nil, err
-		}
-		problems[i].Topics = topics
-	}
-	return problems, nil
+	return requireRowsAffected(res, fmt.Sprintf("service: problem %d", problemID))
 }

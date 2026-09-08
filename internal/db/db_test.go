@@ -64,6 +64,55 @@ func TestOpen_Idempotent(t *testing.T) {
 	}
 }
 
+// TestOpen_DeletedSeedTopicDoesNotResurrect guards against a real
+// regression: seeding once lived in schema.sql as INSERT OR IGNORE,
+// which ran on every Open (schema.sql is meant to be re-applied every
+// startup) — so deleting a seeded topic via the Topics page, then
+// restarting the app, silently brought it back, because an absent row
+// no longer conflicts with OR IGNORE. Seeding must run only once, when
+// the table is first created, and respect a user's deletion afterward.
+func TestOpen_DeletedSeedTopicDoesNotResurrect(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "test.db")
+
+	first, err := Open(path)
+	if err != nil {
+		t.Fatalf("first Open: unexpected err: %v", err)
+	}
+	if _, err := first.Exec(`DELETE FROM topics WHERE name = ?`, "Database"); err != nil {
+		t.Fatalf("delete topic: unexpected err: %v", err)
+	}
+	var countAfterDelete int
+	if err := first.QueryRow(`SELECT COUNT(*) FROM topics`).Scan(&countAfterDelete); err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+	if countAfterDelete != 34 {
+		t.Fatalf("count after deleting one topic = %d, want 34", countAfterDelete)
+	}
+	first.Close()
+
+	second, err := Open(path)
+	if err != nil {
+		t.Fatalf("second Open: unexpected err: %v", err)
+	}
+	defer second.Close()
+
+	var exists bool
+	if err := second.QueryRow(`SELECT EXISTS(SELECT 1 FROM topics WHERE name = ?)`, "Database").Scan(&exists); err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+	if exists {
+		t.Error("deleted seed topic \"Database\" reappeared after restart — seeding must only run once, not on every Open")
+	}
+
+	var countAfterReopen int
+	if err := second.QueryRow(`SELECT COUNT(*) FROM topics`).Scan(&countAfterReopen); err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+	if countAfterReopen != 34 {
+		t.Errorf("count after restart = %d, want 34 (the deletion should persist)", countAfterReopen)
+	}
+}
+
 func TestOpen_ForeignKeysEnabled(t *testing.T) {
 	conn := openTestDB(t)
 

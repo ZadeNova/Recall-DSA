@@ -1,5 +1,9 @@
 -- Recall-DSA schema (SPEC.md §3). Idempotent by design: every statement is
--- safe to re-run against an already-initialized database.
+-- safe to re-run against an already-initialized database. Seed data lives
+-- in seed_topics.sql, deliberately NOT here — this file runs on every
+-- startup, but seeding must run only once (see db.go's Open), or a user's
+-- deliberate deletion of a seeded topic would silently resurrect on the
+-- next restart.
 
 CREATE TABLE IF NOT EXISTS problems (
     id         INTEGER PRIMARY KEY,
@@ -50,49 +54,3 @@ CREATE TABLE IF NOT EXISTS problem_topics (
 );
 
 CREATE INDEX IF NOT EXISTS idx_problem_topics_topic_id ON problem_topics (topic_id);
-
--- Seed vocabulary (FRONTEND.md, topic reseed): NeetCode 150's 18
--- categories kept verbatim, plus 17 LeetCode tags for concepts NC150
--- has no category for at all (not finer subdivisions of something NC150
--- already groups together — e.g. no separate "Array"/"Hash Table" since
--- NC150's "Arrays & Hashing" already covers both).
--- New tags can still be created freely later — this is a starting point,
--- not a fixed list.
-INSERT OR IGNORE INTO topics (name) VALUES
-    -- NeetCode 150
-    ('Arrays & Hashing'),
-    ('Two Pointers'),
-    ('Sliding Window'),
-    ('Stack'),
-    ('Binary Search'),
-    ('Linked List'),
-    ('Trees'),
-    ('Tries'),
-    ('Heap / Priority Queue'),
-    ('Backtracking'),
-    ('Graphs'),
-    ('Advanced Graphs'),
-    ('1-D Dynamic Programming'),
-    ('2-D Dynamic Programming'),
-    ('Greedy'),
-    ('Intervals'),
-    ('Math & Geometry'),
-    ('Bit Manipulation'),
-    -- LeetCode gap-fill
-    ('String'),
-    ('Doubly-Linked List'),
-    ('Queue'),
-    ('Prefix Sum'),
-    ('Monotonic Stack'),
-    ('Recursion'),
-    ('Divide and Conquer'),
-    ('Enumeration'),
-    ('Simulation'),
-    ('Sorting'),
-    ('Memoization'),
-    ('Union-Find'),
-    ('Depth-First Search'),
-    ('Breadth-First Search'),
-    ('Counting'),
-    ('Database'),
-    ('Design');

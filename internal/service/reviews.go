@@ -11,14 +11,13 @@ import (
 	"github.com/ZadeNova/recall-dsa/internal/scheduler"
 )
 
-// RecordAttempt appends a row to the append-only attempts log. It does
+// recordAttempt appends a row to the append-only attempts log. It does
 // not touch review_state — see RecordReview, which is what a grading
 // action should actually call (SPEC.md §2: grading is a single, unified
 // action, not two separate steps a caller must remember to compose).
-func (s *Service) RecordAttempt(ctx context.Context, problemID int64, grade scheduler.Grade, at time.Time) error {
-	return recordAttempt(ctx, s.db, problemID, grade, at)
-}
-
+// Deliberately unexported: every real caller needs both attempt-logging
+// and review_state advanced together, so there's no legitimate reason to
+// call this alone from outside the package.
 func recordAttempt(ctx context.Context, q querier, problemID int64, grade scheduler.Grade, at time.Time) error {
 	_, err := q.ExecContext(ctx,
 		`INSERT INTO attempts (problem_id, attempted_at, grade) VALUES (?, ?, ?)`,
@@ -163,6 +162,10 @@ func (s *Service) RecommendUpcoming(ctx context.Context, topic *string, days, li
 // correspondence to scanReviewItems's Scan args) exists exactly once,
 // instead of three copies that could silently drift out of sync with
 // each other and with the scan.
+// limit <= 0 means "no limit" (return every matching row), not "limit of
+// zero rows" — SQL's own LIMIT 0 would otherwise silently return nothing
+// while total still reports every matching row, which reads as a bug
+// (0 items but a non-zero total) rather than "no pagination requested."
 func (s *Service) queryReviewItems(ctx context.Context, from, where, orderBy string, args []any, limit, offset int) ([]DueItem, int, error) {
 	var total int
 	countQuery := `SELECT COUNT(DISTINCT p.id) ` + from + where
@@ -173,8 +176,12 @@ func (s *Service) queryReviewItems(ctx context.Context, from, where, orderBy str
 	query := `SELECT p.id, p.title, p.url, p.difficulty, p.slug,
 		       rs.ease_factor, rs.interval_days, rs.repetitions,
 		       rs.next_review_date, rs.last_grade, rs.last_reviewed_at ` +
-		from + where + ` ORDER BY ` + orderBy + ` LIMIT ? OFFSET ?`
-	pageArgs := append(append([]any{}, args...), limit, offset)
+		from + where + ` ORDER BY ` + orderBy
+	pageArgs := append([]any{}, args...)
+	if limit > 0 {
+		query += ` LIMIT ? OFFSET ?`
+		pageArgs = append(pageArgs, limit, offset)
+	}
 
 	rows, err := s.db.QueryContext(ctx, query, pageArgs...)
 	if err != nil {

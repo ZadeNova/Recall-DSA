@@ -11,6 +11,22 @@ const defaultPageSize = 10
 
 var validPageSizes = map[int]bool{10: true, 25: true, 50: true}
 
+// pageSizeOptions is validPageSizes flattened into a sorted slice, built
+// once at package init — the single source the page-size <select>'s
+// options are rendered from (see pageInfo.PageSizeOptions), so the
+// dropdown can't offer a value validPageSizes would reject, or vice
+// versa. Map iteration order isn't stable, hence the sort.
+var pageSizeOptions = sortedPageSizes()
+
+func sortedPageSizes() []int {
+	sizes := make([]int, 0, len(validPageSizes))
+	for n := range validPageSizes {
+		sizes = append(sizes, n)
+	}
+	sort.Ints(sizes)
+	return sizes
+}
+
 // hiddenField is one <input type="hidden"> the shared "pagination"
 // partial renders inside its page-size form, so changing page size
 // preserves whatever filters are active.
@@ -31,15 +47,16 @@ type hiddenField struct {
 // page's filters can't preserve correctly in the URL but drop silently
 // when the page-size dropdown is changed (or vice versa).
 type pageInfo struct {
-	Page          int
-	PageSize      int
-	TotalCount    int
-	TotalPages    int
-	ShowingText   string
-	PrevURL       string
-	NextURL       string
-	PageSizeParam string
-	HiddenFields  []hiddenField
+	Page            int
+	PageSize        int
+	TotalCount      int
+	TotalPages      int
+	ShowingText     string
+	PrevURL         string
+	NextURL         string
+	PageSizeParam   string
+	PageSizeOptions []int
+	HiddenFields    []hiddenField
 }
 
 // pageSizeFromQuery/pageFromQuery parse the page-size/page query params,
@@ -82,8 +99,9 @@ func buildPageInfo(path string, extra url.Values, pageParam, pageSizeParam strin
 
 	info := pageInfo{
 		Page: page, PageSize: pageSize, TotalCount: total, TotalPages: totalPages,
-		PageSizeParam: pageSizeParam,
-		HiddenFields:  hiddenFieldsFrom(extra),
+		PageSizeParam:   pageSizeParam,
+		PageSizeOptions: pageSizeOptions,
+		HiddenFields:    hiddenFieldsFrom(extra),
 	}
 	if total == 0 {
 		info.ShowingText = "No problems match"

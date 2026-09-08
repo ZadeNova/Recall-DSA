@@ -142,7 +142,14 @@ func allBlank(record []string) bool {
 // and "protected" means it already has real review progress that bulk
 // import will leave alone (see Service.BulkImportProblems) — informational
 // in all three cases, never an error.
+//
+// Checks every row's slug in one batched call (Service.CheckSlugs)
+// rather than one call per row — a real ~190-row import previously cost
+// on the order of 380 queries here alone, doubled by handleImportCommit
+// re-validating the same input before writing anything.
 func annotateExistingSlugs(ctx context.Context, svc *service.Service, rows []importRowView) error {
+	slugs := make([]string, 0, len(rows))
+	slugRowIndexes := make(map[string][]int, len(rows))
 	for i := range rows {
 		if rows[i].Status != "new" {
 			continue
@@ -151,15 +158,29 @@ func annotateExistingSlugs(ctx context.Context, svc *service.Service, rows []imp
 		if err != nil {
 			return err
 		}
-		status, err := svc.CheckSlug(ctx, slug)
-		if err != nil {
-			return err
+		if _, seen := slugRowIndexes[slug]; !seen {
+			slugs = append(slugs, slug)
 		}
-		switch status {
+		slugRowIndexes[slug] = append(slugRowIndexes[slug], i)
+	}
+
+	statuses, err := svc.CheckSlugs(ctx, slugs)
+	if err != nil {
+		return err
+	}
+
+	for slug, indexes := range slugRowIndexes {
+		var newStatus string
+		switch statuses[slug] {
 		case service.SlugSafeToRefresh:
-			rows[i].Status = "merge"
+			newStatus = "merge"
 		case service.SlugProtected:
-			rows[i].Status = "protected"
+			newStatus = "protected"
+		default:
+			continue
+		}
+		for _, i := range indexes {
+			rows[i].Status = newStatus
 		}
 	}
 	return nil

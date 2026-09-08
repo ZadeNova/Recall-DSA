@@ -6,6 +6,7 @@ import (
 	"errors"
 	"reflect"
 	"sort"
+	"strings"
 	"testing"
 	"time"
 
@@ -228,6 +229,72 @@ func TestUpdateProblem(t *testing.T) {
 	}
 }
 
+// TestUpdateProblem_RejectsDuplicateSlug guards against the same
+// raw-error-leak regression as CreateTopic/RenameTopic, for the other
+// realistic path into it: editing a problem's URL to one that already
+// belongs to a different problem hits the UNIQUE constraint on
+// problems.slug, and must translate to ErrDuplicateSlug rather than the
+// raw SQLite driver message.
+func TestUpdateProblem_RejectsDuplicateSlug(t *testing.T) {
+	s := newTestService(t)
+	ctx := context.Background()
+	at := time.Now()
+
+	if _, err := s.AddProblem(ctx, AddProblemInput{
+		Title: "Two Sum", URL: "two-sum", Difficulty: DifficultyEasy,
+		Grade: scheduler.Good, At: at,
+	}); err != nil {
+		t.Fatalf("AddProblem: unexpected err: %v", err)
+	}
+	other, err := s.AddProblem(ctx, AddProblemInput{
+		Title: "Valid Anagram", URL: "valid-anagram", Difficulty: DifficultyEasy,
+		Grade: scheduler.Good, At: at,
+	})
+	if err != nil {
+		t.Fatalf("AddProblem: unexpected err: %v", err)
+	}
+
+	err = s.UpdateProblem(ctx, other.ID, UpdateProblemInput{
+		Title: "Valid Anagram", URL: "two-sum", Difficulty: DifficultyEasy,
+	})
+	if err == nil {
+		t.Fatal("expected error updating a problem's URL to one already used by another problem")
+	}
+	if !errors.Is(err, ErrDuplicateSlug) {
+		t.Errorf("err = %v, want errors.Is(err, ErrDuplicateSlug)", err)
+	}
+	if strings.Contains(err.Error(), "constraint") || strings.Contains(err.Error(), "UNIQUE") {
+		t.Errorf("err.Error() = %q leaks raw SQL vocabulary, want a plain-English message", err.Error())
+	}
+}
+
+// TestUpdateProblem_MissingIDReturnsNotFound and
+// TestDeleteProblem_MissingIDReturnsNotFound guard against a real
+// regression: neither method checked RowsAffected, so
+// POST /problems/99999/update or .../delete silently "succeeded" and
+// redirected as if it had worked, for an ID that was never touched.
+func TestUpdateProblem_MissingIDReturnsNotFound(t *testing.T) {
+	s := newTestService(t)
+	ctx := context.Background()
+
+	err := s.UpdateProblem(ctx, 999999, UpdateProblemInput{
+		Title: "Ghost", URL: "ghost", Difficulty: DifficultyEasy,
+	})
+	if !errors.Is(err, sql.ErrNoRows) {
+		t.Errorf("err = %v, want errors.Is(err, sql.ErrNoRows)", err)
+	}
+}
+
+func TestDeleteProblem_MissingIDReturnsNotFound(t *testing.T) {
+	s := newTestService(t)
+	ctx := context.Background()
+
+	err := s.DeleteProblem(ctx, 999999)
+	if !errors.Is(err, sql.ErrNoRows) {
+		t.Errorf("err = %v, want errors.Is(err, sql.ErrNoRows)", err)
+	}
+}
+
 func TestDeleteProblem_CascadesAtServiceLevel(t *testing.T) {
 	s := newTestService(t)
 	ctx := context.Background()
@@ -245,13 +312,13 @@ func TestDeleteProblem_CascadesAtServiceLevel(t *testing.T) {
 		t.Fatalf("DeleteProblem: unexpected err: %v", err)
 	}
 
-	problems, err := s.ListProblems(ctx, ListProblemsFilter{})
+	problems, _, err := s.ListLibrary(ctx, ListProblemsFilter{Limit: 100})
 	if err != nil {
-		t.Fatalf("ListProblems: unexpected err: %v", err)
+		t.Fatalf("ListLibrary: unexpected err: %v", err)
 	}
 	for _, p := range problems {
 		if p.ID == problem.ID {
-			t.Fatalf("deleted problem %d still present in ListProblems", problem.ID)
+			t.Fatalf("deleted problem %d still present in ListLibrary", problem.ID)
 		}
 	}
 
@@ -261,42 +328,5 @@ func TestDeleteProblem_CascadesAtServiceLevel(t *testing.T) {
 	}
 	if attemptCount != 0 {
 		t.Errorf("attempts remaining after delete = %d, want 0", attemptCount)
-	}
-}
-
-func TestListProblems_FiltersByTopicAndDifficulty(t *testing.T) {
-	s := newTestService(t)
-	ctx := context.Background()
-	at := time.Now()
-
-	mustAdd := func(title, slug string, difficulty Difficulty, topics []string) {
-		t.Helper()
-		if _, err := s.AddProblem(ctx, AddProblemInput{
-			Title: title, URL: slug, Difficulty: difficulty, Topics: topics,
-			Grade: scheduler.Good, At: at,
-		}); err != nil {
-			t.Fatalf("AddProblem(%s): unexpected err: %v", title, err)
-		}
-	}
-	mustAdd("Two Sum", "two-sum", DifficultyEasy, []string{"Arrays & Hashing"})
-	mustAdd("Best Time to Buy and Sell Stock", "best-time", DifficultyEasy, []string{"Arrays & Hashing", "Sliding Window"})
-	mustAdd("Climbing Stairs", "climbing-stairs", DifficultyMedium, []string{"1-D Dynamic Programming"})
-
-	arraysTopic := "Arrays & Hashing"
-	byTopic, err := s.ListProblems(ctx, ListProblemsFilter{Topic: &arraysTopic})
-	if err != nil {
-		t.Fatalf("ListProblems by topic: unexpected err: %v", err)
-	}
-	if len(byTopic) != 2 {
-		t.Errorf("ListProblems(topic=Arrays & Hashing) returned %d, want 2", len(byTopic))
-	}
-
-	medium := DifficultyMedium
-	byDifficulty, err := s.ListProblems(ctx, ListProblemsFilter{Difficulty: &medium})
-	if err != nil {
-		t.Fatalf("ListProblems by difficulty: unexpected err: %v", err)
-	}
-	if len(byDifficulty) != 1 || byDifficulty[0].Slug != "climbing-stairs" {
-		t.Errorf("ListProblems(difficulty=Medium) = %+v, want just climbing-stairs", byDifficulty)
 	}
 }

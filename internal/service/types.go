@@ -89,16 +89,16 @@ type UpdateProblemInput struct {
 	Topics     []string
 }
 
-// ListProblemsFilter narrows the library view (SPEC.md §7) by topic
-// and/or difficulty. A nil field means "no filter on this dimension."
+// ListProblemsFilter narrows ListLibrary's results (SPEC.md §7) by
+// topic and/or difficulty, plus search/sort/pagination. A nil Topic or
+// Difficulty means "no filter on that dimension." Limit must be > 0 —
+// ListLibrary passes it straight into a SQL LIMIT clause, so a zero
+// value returns zero rows rather than "unlimited."
 type ListProblemsFilter struct {
 	Topic      *string
 	Difficulty *Difficulty
-
-	// Search, Sort, Limit, and Offset are used only by ListLibrary — the
-	// paginated, SRS-aware view. ListProblems ignores them.
-	Search *string
-	Sort   string // "next_review" (default), "title", or "difficulty"
-	Limit  int
-	Offset int
+	Search     *string
+	Sort       string // "next_review" (default), "title", or "difficulty"
+	Limit      int
+	Offset     int
 }

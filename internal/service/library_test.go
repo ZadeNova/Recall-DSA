@@ -195,6 +195,49 @@ func TestListLibrary_FiltersByTopic(t *testing.T) {
 	}
 }
 
+// TestListLibrary_SearchEscapesLikeMetacharacters guards against a real
+// failure mode of the naive version of this filter: p.title LIKE
+// ?ESCAPE'\' means a raw "%" or "_" in the search term would otherwise
+// be interpreted as a SQL wildcard rather than a literal character —
+// searching "100%" would match every title, and "_score" would match
+// any five-character-prefixed title, not just ones that actually contain
+// an underscore.
+func TestListLibrary_SearchEscapesLikeMetacharacters(t *testing.T) {
+	s := newTestService(t)
+	ctx := context.Background()
+	at := time.Now()
+
+	mustAdd := func(title, slug string) {
+		t.Helper()
+		if _, err := s.AddProblem(ctx, AddProblemInput{
+			Title: title, URL: slug, Difficulty: DifficultyEasy, Grade: scheduler.Good, At: at,
+		}); err != nil {
+			t.Fatalf("AddProblem(%s): unexpected err: %v", title, err)
+		}
+	}
+	mustAdd("100% Done", "pct-done")
+	mustAdd("Normal Problem", "normal")
+	mustAdd("under_score", "under-score")
+
+	percent := "%"
+	items, total, err := s.ListLibrary(ctx, ListProblemsFilter{Search: &percent, Limit: 10})
+	if err != nil {
+		t.Fatalf("ListLibrary: unexpected err: %v", err)
+	}
+	if total != 1 || len(items) != 1 || items[0].Slug != "pct-done" {
+		t.Errorf(`search "%%" = %v (total %d), want only pct-done (literal match, not a wildcard matching everything)`, sluglist(items), total)
+	}
+
+	underscore := "_"
+	items, total, err = s.ListLibrary(ctx, ListProblemsFilter{Search: &underscore, Limit: 10})
+	if err != nil {
+		t.Fatalf("ListLibrary: unexpected err: %v", err)
+	}
+	if total != 1 || len(items) != 1 || items[0].Slug != "under-score" {
+		t.Errorf(`search "_" = %v (total %d), want only under-score (literal match, not a single-char wildcard matching everything)`, sluglist(items), total)
+	}
+}
+
 func sluglist(items []DueItem) []string {
 	out := make([]string, len(items))
 	for i, it := range items {

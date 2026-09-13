@@ -91,9 +91,9 @@ type UpdateProblemInput struct {
 
 // ListProblemsFilter narrows ListLibrary's results (SPEC.md §7) by
 // topic and/or difficulty, plus search/sort/pagination. A nil Topic or
-// Difficulty means "no filter on that dimension." Limit must be > 0 —
-// ListLibrary passes it straight into a SQL LIMIT clause, so a zero
-// value returns zero rows rather than "unlimited."
+// Difficulty means "no filter on that dimension." A Limit of 0 (or
+// negative) means "no limit" — the zero-value filter returns every
+// matching row rather than none.
 type ListProblemsFilter struct {
 	Topic      *string
 	Difficulty *Difficulty

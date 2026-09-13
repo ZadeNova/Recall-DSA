@@ -130,7 +130,7 @@ func (s *Service) RecommendDue(ctx context.Context, topic *string, limit, offset
 	where := ` WHERE rs.next_review_date <= ?`
 	args = append(args, s.today())
 
-	return s.queryReviewItems(ctx, from, where, "rs.next_review_date ASC", args, limit, offset)
+	return s.queryReviewItems(ctx, from, where, dueOrderBy, args, limit, offset)
 }
 
 // RecommendUpcoming returns problems due after today but within the next
@@ -150,8 +150,34 @@ func (s *Service) RecommendUpcoming(ctx context.Context, topic *string, days, li
 	where := ` WHERE rs.next_review_date > ? AND rs.next_review_date <= ?`
 	args = append(args, s.today(), horizon)
 
-	return s.queryReviewItems(ctx, from, where, "rs.next_review_date ASC", args, limit, offset)
+	return s.queryReviewItems(ctx, from, where, dueOrderBy, args, limit, offset)
 }
+
+// dueOrderBy orders both due-queue views: most overdue first, then by
+// problem id as a tiebreaker.
+//
+// The tiebreaker is load-bearing, not cosmetic. next_review_date is a
+// date, not a timestamp, so ties are the normal case rather than an edge
+// case — a bulk import deliberately clusters roughly targetPerDay
+// problems onto each identical date (see BulkImportProblems), and an
+// overdue backlog piles up the same way. SQL guarantees no ordering
+// among rows tied on every ORDER BY term, so without this, paging is two
+// independent queries whose tied rows may come back in different
+// orders: page 2 could repeat a problem already shown on page 1 while
+// another never appears on any page at all. Silently dropping a due
+// problem breaks the one guarantee this tool exists to provide, so the
+// sort has to be total. The topic-filtered variant of this query is the
+// one where that's a live risk rather than a theoretical one — it sorts
+// through a temp b-tree (EXPLAIN QUERY PLAN: "USE TEMP B-TREE FOR ORDER
+// BY"), which carries no stability guarantee at all.
+//
+// Written as rs.problem_id rather than the equal p.id deliberately:
+// problem_id is review_state's INTEGER PRIMARY KEY, hence the implicit
+// rowid of idx_review_state_next_review_date, so the index already
+// yields exactly this order and the tiebreaker is free. Ordering by the
+// identical p.id instead makes SQLite add "USE TEMP B-TREE FOR LAST TERM
+// OF ORDER BY" — same rows, same order, a sort it doesn't need.
+const dueOrderBy = "rs.next_review_date ASC, rs.problem_id ASC"
 
 // queryReviewItems is the query shape shared by RecommendDue,
 // RecommendUpcoming, and ListLibrary (internal/service/library.go): a
@@ -196,10 +222,13 @@ func (s *Service) queryReviewItems(ctx context.Context, from, where, orderBy str
 	return items, total, nil
 }
 
-// appendTopicJoin adds the topic-filter JOIN clause shared by RecommendDue
-// and RecommendUpcoming when topic is non-nil, so the two queries' join
-// semantics can't drift apart. Returns the (possibly unmodified) query
-// and args with the topic value appended if applicable.
+// appendTopicJoin adds the topic-filter JOIN clause shared by every
+// topic-filterable query — RecommendDue, RecommendUpcoming, ListLibrary,
+// and DueStats — when topic is non-nil, so their join semantics can't
+// drift apart (the Due page in particular relies on its list and its
+// stats row scoping a topic filter identically). Returns the (possibly
+// unmodified) query and args with the topic value appended if
+// applicable.
 func appendTopicJoin(query string, args []any, topic *string) (string, []any) {
 	if topic == nil {
 		return query, args
@@ -210,9 +239,10 @@ func appendTopicJoin(query string, args []any, topic *string) (string, []any) {
 	return query, append(args, *topic)
 }
 
-// scanReviewItems is the shared row-scanning logic for RecommendDue and
-// RecommendUpcoming — both select the same columns, just with a
-// different WHERE clause. Topics are batch-loaded in one query AFTER the
+// scanReviewItems is the shared row-scanning logic behind every caller
+// of queryReviewItems (RecommendDue, RecommendUpcoming, ListLibrary) —
+// they select the same columns, differing only in from/where/orderBy.
+// Topics are batch-loaded in one query AFTER the
 // outer rows are fully drained (see attachTopicsToItems) rather than one
 // query per row while rows is still open — both to avoid an N+1 query
 // per page, and because a per-row query on an open outer cursor would

@@ -31,9 +31,7 @@ func TestHiddenFieldsFrom_SortedAndFlattened(t *testing.T) {
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("hiddenFieldsFrom(%v) = %+v, want %+v", extra, got, want)
 	}
-}
 
-func TestHiddenFieldsFrom_Empty(t *testing.T) {
 	if got := hiddenFieldsFrom(url.Values{}); len(got) != 0 {
 		t.Errorf("hiddenFieldsFrom(empty) = %+v, want empty", got)
 	}

@@ -219,92 +219,92 @@ func spreadDays(t *testing.T, ctx context.Context, s *Service) float64 {
 	return max.Sub(min).Hours() / 24
 }
 
-// TestBulkImportProblems_StaggerScalesWithBatchSizeAboveFloor asserts the
-// fix for the real-world case that motivated it: a batch large enough
-// that the old hardcoded 14-day window packed too many reviews onto each
-// day (192 problems / 14 days ≈ 14/day). With the default target of 5/day,
-// 100 rows should spread across ceil(100/5)=20 days, not be capped at 14.
-func TestBulkImportProblems_StaggerScalesWithBatchSizeAboveFloor(t *testing.T) {
-	s := newTestService(t)
-	ctx := t.Context()
-	fixedClock(s, time.Date(2026, 1, 1, 9, 0, 0, 0, time.UTC))
-
-	rows := makeStaggerRows(100)
-	if _, err := s.BulkImportProblems(ctx, rows, 0); err != nil {
-		t.Fatalf("BulkImportProblems: unexpected err: %v", err)
+// TestStaggerWindowDays is a direct, pure unit test of the window-sizing
+// formula (ceiling division, floored at minStaggerDays) — previously the
+// only test exercising this arithmetic computed its own expected value
+// by calling staggerWindowDays itself, which can't fail no matter what
+// the formula does. Hardcoded expectations here so a real regression
+// (e.g. a floor/ceiling swap, or an off-by-one in the division) shows up.
+func TestStaggerWindowDays(t *testing.T) {
+	cases := []struct {
+		name         string
+		n            int
+		targetPerDay int
+		want         int
+	}{
+		{"zero_target_falls_back_to_default_above_floor", 100, 0, 20}, // ceil(100/5)=20
+		{"negative_target_falls_back_to_default", 100, -3, 20},        // same fallback as zero
+		{"small_batch_floors_at_minStaggerDays", 3, 5, 14},            // ceil(3/5)=1, floored to 14
+		{"computed_window_below_floor_gets_floored", 100, 8, 14},      // ceil(100/8)=13, floored to 14
+		{"tighter_target_scales_above_floor", 100, 3, 34},             // ceil(100/3)=34
+		{"exact_division_above_floor", 100, 5, 20},                    // ceil(100/5)=20 exactly
 	}
-
-	spread := spreadDays(t, ctx, s)
-	if spread < 18 || spread > 20 {
-		t.Errorf("spread = %v days, want ~19-20 (ceil(100/5)=20 days at the default 5/day target)", spread)
-	}
-}
-
-// TestBulkImportProblems_StaggerRespectsExplicitTarget asserts a caller
-// can tune pacing per import: a tighter target (8/day) should produce a
-// visibly narrower spread than a gentler one (3/day) for the same batch.
-func TestBulkImportProblems_StaggerRespectsExplicitTarget(t *testing.T) {
-	tight := newTestService(t)
-	gentle := newTestService(t)
-	fixedClock(tight, time.Date(2026, 1, 1, 9, 0, 0, 0, time.UTC))
-	fixedClock(gentle, time.Date(2026, 1, 1, 9, 0, 0, 0, time.UTC))
-	ctx := context.Background()
-
-	const n = 100
-	if _, err := tight.BulkImportProblems(ctx, makeStaggerRows(n), 8); err != nil {
-		t.Fatalf("tight import: unexpected err: %v", err)
-	}
-	if _, err := gentle.BulkImportProblems(ctx, makeStaggerRows(n), 3); err != nil {
-		t.Fatalf("gentle import: unexpected err: %v", err)
-	}
-
-	tightSpread := spreadDays(t, ctx, tight)
-	gentleSpread := spreadDays(t, ctx, gentle)
-
-	wantTight := float64(staggerWindowDays(n, 8) - 1)
-	wantGentle := float64(staggerWindowDays(n, 3) - 1)
-	if tightSpread != wantTight {
-		t.Errorf("tight (target=8) spread = %v, want %v", tightSpread, wantTight)
-	}
-	if gentleSpread != wantGentle {
-		t.Errorf("gentle (target=3) spread = %v, want %v", gentleSpread, wantGentle)
-	}
-	if gentleSpread <= tightSpread {
-		t.Errorf("gentle spread (%v) should be wider than tight spread (%v)", gentleSpread, tightSpread)
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := staggerWindowDays(c.n, c.targetPerDay); got != c.want {
+				t.Errorf("staggerWindowDays(%d, %d) = %d, want %d", c.n, c.targetPerDay, got, c.want)
+			}
+		})
 	}
 }
 
-func TestBulkImportProblems_StaggerSpreadsAcrossTwoWeeks(t *testing.T) {
-	s := newTestService(t)
-	ctx := t.Context()
-	fixedClock(s, time.Date(2026, 1, 1, 9, 0, 0, 0, time.UTC))
+// TestBulkImportProblems_Stagger is the integration counterpart to
+// TestStaggerWindowDays: it proves BulkImportProblems actually applies
+// whatever staggerWindowDays computes to the rows it writes, across both
+// regimes that formula produces — floored (a batch small enough that the
+// target-driven window would be under two weeks) and scaled (a batch
+// large enough to exceed the floor) — plus that a tighter explicit
+// target measurably narrows the spread.
+func TestBulkImportProblems_Stagger(t *testing.T) {
+	t.Run("small batch floors at two weeks", func(t *testing.T) {
+		s := newTestService(t)
+		ctx := t.Context()
+		fixedClock(s, time.Date(2026, 1, 1, 9, 0, 0, 0, time.UTC))
 
-	const n = 30
-	rows := make([]BulkImportRow, n)
-	for i := range rows {
-		rows[i] = BulkImportRow{
-			Title:      "Problem",
-			URL:        "problem-" + string(rune('a'+i)),
-			Difficulty: DifficultyEasy,
-			Topics:     []string{"Arrays"},
+		if _, err := s.BulkImportProblems(ctx, makeStaggerRows(30), 0); err != nil {
+			t.Fatalf("BulkImportProblems: unexpected err: %v", err)
 		}
-	}
+		spread := spreadDays(t, ctx, s)
+		if spread < 10 || spread > 14 {
+			t.Errorf("spread = %v days, want roughly 10-14 (SPEC.md §9: stagger across ~2 weeks)", spread)
+		}
+	})
 
-	if _, err := s.BulkImportProblems(ctx, rows, 0); err != nil {
-		t.Fatalf("BulkImportProblems: unexpected err: %v", err)
-	}
+	t.Run("large batch scales with target", func(t *testing.T) {
+		s := newTestService(t)
+		ctx := t.Context()
+		fixedClock(s, time.Date(2026, 1, 1, 9, 0, 0, 0, time.UTC))
 
-	var minDate, maxDate string
-	row := s.db.QueryRowContext(ctx, `SELECT MIN(next_review_date), MAX(next_review_date) FROM review_state`)
-	if err := row.Scan(&minDate, &maxDate); err != nil {
-		t.Fatalf("scan min/max: %v", err)
-	}
-	min, _ := time.Parse("2006-01-02", minDate)
-	max, _ := time.Parse("2006-01-02", maxDate)
-	spread := max.Sub(min).Hours() / 24
-	if spread < 10 || spread > 14 {
-		t.Errorf("spread = %v days, want roughly 10-14 (SPEC.md §9: stagger across ~2 weeks)", spread)
-	}
+		if _, err := s.BulkImportProblems(ctx, makeStaggerRows(100), 0); err != nil {
+			t.Fatalf("BulkImportProblems: unexpected err: %v", err)
+		}
+		spread := spreadDays(t, ctx, s)
+		if spread < 18 || spread > 20 {
+			t.Errorf("spread = %v days, want ~19-20 (ceil(100/5)=20 days at the default 5/day target)", spread)
+		}
+	})
+
+	t.Run("explicit target narrows or widens spread", func(t *testing.T) {
+		tight := newTestService(t)
+		gentle := newTestService(t)
+		fixedClock(tight, time.Date(2026, 1, 1, 9, 0, 0, 0, time.UTC))
+		fixedClock(gentle, time.Date(2026, 1, 1, 9, 0, 0, 0, time.UTC))
+		ctx := context.Background()
+
+		const n = 100
+		if _, err := tight.BulkImportProblems(ctx, makeStaggerRows(n), 8); err != nil {
+			t.Fatalf("tight import: unexpected err: %v", err)
+		}
+		if _, err := gentle.BulkImportProblems(ctx, makeStaggerRows(n), 3); err != nil {
+			t.Fatalf("gentle import: unexpected err: %v", err)
+		}
+
+		tightSpread := spreadDays(t, ctx, tight)
+		gentleSpread := spreadDays(t, ctx, gentle)
+		if gentleSpread <= tightSpread {
+			t.Errorf("gentle spread (%v, target=3) should be wider than tight spread (%v, target=8) — a looser target_per_day should stagger further, not less", gentleSpread, tightSpread)
+		}
+	})
 }
 
 // TestCheckSlugs_BatchedMixOfNewSafeAndProtected asserts CheckSlugs

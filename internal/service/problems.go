@@ -142,33 +142,48 @@ func replaceTopics(ctx context.Context, q querier, problemID int64, topicNames [
 	return attachTopics(ctx, q, problemID, topicNames)
 }
 
+// AddProblemResult is what AddProblem did. Created distinguishes the two
+// outcomes the caller cannot otherwise tell apart: a genuinely new
+// problem, versus a grade recorded against one that already existed. The
+// second case discards the submitted title/difficulty/topics (SPEC.md
+// §9 keeps the existing row's fields), so a caller that reports both
+// outcomes identically is hiding the fact that the user's input went
+// nowhere. The Problem is embedded, so callers that only want the row
+// can keep reading .ID/.Title/.Topics directly off the result.
+type AddProblemResult struct {
+	Problem
+	Created bool
+}
+
 // AddProblem finds or creates the problem identified by input.URL's slug,
 // attaches its topics (on creation only), and records the first
 // attempt/grade — all as one atomic action, matching SPEC.md §2 ("this
 // creates the problems row _and_ logs the first attempt/grade in the same
 // action"). If a problem with this slug already exists, no duplicate is
 // created: SPEC.md §9 says the grade is instead recorded against the
-// existing row, and its existing topics are left as-is.
-func (s *Service) AddProblem(ctx context.Context, input AddProblemInput) (Problem, error) {
+// existing row, and its existing topics are left as-is — the returned
+// result's Created reports which of the two happened.
+func (s *Service) AddProblem(ctx context.Context, input AddProblemInput) (AddProblemResult, error) {
 	if strings.TrimSpace(input.Title) == "" {
-		return Problem{}, errors.New("service: problem title is empty")
+		return AddProblemResult{}, errors.New("service: problem title is empty")
 	}
 	if !input.Difficulty.valid() {
-		return Problem{}, fmt.Errorf("service: invalid difficulty %q", input.Difficulty)
+		return AddProblemResult{}, fmt.Errorf("service: invalid difficulty %q", input.Difficulty)
 	}
 	slug, err := extractSlug(input.URL)
 	if err != nil {
-		return Problem{}, err
+		return AddProblemResult{}, err
 	}
 
-	var problem Problem
+	var result AddProblemResult
 	err = s.withTx(ctx, func(tx *sql.Tx) error {
 		problemID, err := findProblemIDBySlug(ctx, tx, slug)
 		if err != nil {
 			return err
 		}
 
-		if problemID == 0 {
+		result.Created = problemID == 0
+		if result.Created {
 			problemID, err = insertProblem(ctx, tx, input.Title, canonicalURL(slug), input.Difficulty, slug)
 			if err != nil {
 				return err
@@ -185,13 +200,13 @@ func (s *Service) AddProblem(ctx context.Context, input AddProblemInput) (Proble
 			return err
 		}
 
-		problem, err = loadProblem(ctx, tx, problemID)
+		result.Problem, err = loadProblem(ctx, tx, problemID)
 		return err
 	})
 	if err != nil {
-		return Problem{}, err
+		return AddProblemResult{}, err
 	}
-	return problem, nil
+	return result, nil
 }
 
 // GetProblem fetches a single problem by id (e.g. to populate an edit

@@ -3,6 +3,7 @@ package scheduler
 import (
 	"errors"
 	"math"
+	"math/rand"
 	"testing"
 )
 
@@ -320,5 +321,53 @@ func TestApply_UnboundedEaseGrowthStaysWithinIntervalCap(t *testing.T) {
 	}
 	if !reachedCap {
 		t.Fatal("expected interval to reach the 45-day cap within 1000 consecutive Easy grades")
+	}
+}
+
+// TestApply_InvariantsHoldOverRandomSequences fuzzes Apply against a
+// deterministic pseudo-random stream of grades (fixed seed, so a failure
+// reproduces exactly). Every other test in this file walks one hand-picked
+// path; this exists to catch a state the hand-picked traces never visit —
+// most concretely IntervalDays reaching 0, which would make a problem
+// permanently "due" since RecommendDue only checks next_review_date <=
+// today. The invariants checked are exactly the ones CLAUDE.md calls out
+// as the easiest ways to get this module subtly wrong, plus the two
+// structural bounds (ease floor, interval cap) every other test already
+// assumes but none states as a standalone property.
+func TestApply_InvariantsHoldOverRandomSequences(t *testing.T) {
+	grades := []Grade{Failed, Hard, Good, Easy}
+	rng := rand.New(rand.NewSource(42))
+
+	state := NewReviewState()
+	for i := 0; i < 2000; i++ {
+		grade := grades[rng.Intn(len(grades))]
+		prevReps := state.Repetitions
+
+		next, err := state.Apply(grade)
+		if err != nil {
+			t.Fatalf("step %d: Apply(%v) on %+v: unexpected err: %v", i, grade, state, err)
+		}
+
+		if next.IntervalDays < 1 {
+			t.Fatalf("step %d: Apply(%v) on %+v = %+v, IntervalDays < 1 (a problem would never come due again)", i, grade, state, next)
+		}
+		if next.IntervalDays > 45 {
+			t.Fatalf("step %d: Apply(%v) on %+v = %+v, IntervalDays > 45-day cap", i, grade, state, next)
+		}
+		if next.EaseFactor < easeFloor-1e-9 {
+			t.Fatalf("step %d: Apply(%v) on %+v = %+v, EaseFactor below floor %v", i, grade, state, next, easeFloor)
+		}
+		switch grade {
+		case Failed:
+			if next.Repetitions != 0 {
+				t.Fatalf("step %d: Apply(Failed) on %+v = %+v, Repetitions must reset to 0", i, state, next)
+			}
+		default:
+			if next.Repetitions != prevReps+1 {
+				t.Fatalf("step %d: Apply(%v) on %+v = %+v, Repetitions must strictly increment on any pass (including Hard)", i, grade, state, next)
+			}
+		}
+
+		state = next
 	}
 }

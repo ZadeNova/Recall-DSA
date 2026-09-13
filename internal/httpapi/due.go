@@ -5,7 +5,6 @@ import (
 	"log"
 	"net/http"
 	"net/url"
-	"time"
 
 	"github.com/ZadeNova/recall-dsa/internal/scheduler"
 	"github.com/ZadeNova/recall-dsa/internal/service"
@@ -248,7 +247,7 @@ func (s *Server) handleGrade(w http.ResponseWriter, r *http.Request) {
 	}
 
 	grade := scheduler.Grade(r.PostForm.Get("grade"))
-	result, err := s.svc.RecordReview(r.Context(), id, grade, time.Now())
+	result, err := s.svc.RecordReview(r.Context(), id, grade, s.svc.Now())
 	if err != nil {
 		s.renderError(w, r, http.StatusBadRequest, err)
 		return

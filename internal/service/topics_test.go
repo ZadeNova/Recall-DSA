@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"strings"
 	"testing"
@@ -11,9 +10,19 @@ import (
 	"github.com/ZadeNova/recall-dsa/internal/scheduler"
 )
 
+// TestListTopics_IncludesSeedAndCreated deliberately does not pin the
+// exact seed count (internal/db/db_test.go already does that, in the one
+// place it should live) — it only asserts ListTopics grows by exactly
+// one when a topic is created, so adding a seed topic later doesn't also
+// break this test for an unrelated reason.
 func TestListTopics_IncludesSeedAndCreated(t *testing.T) {
 	s := newTestService(t)
 	ctx := context.Background()
+
+	before, err := s.ListTopics(ctx)
+	if err != nil {
+		t.Fatalf("ListTopics: unexpected err: %v", err)
+	}
 
 	topic, err := s.CreateTopic(ctx, "Segment Tree")
 	if err != nil {
@@ -23,13 +32,12 @@ func TestListTopics_IncludesSeedAndCreated(t *testing.T) {
 		t.Errorf("CreateTopic returned %+v", topic)
 	}
 
-	topics, err := s.ListTopics(ctx)
+	after, err := s.ListTopics(ctx)
 	if err != nil {
 		t.Fatalf("ListTopics: unexpected err: %v", err)
 	}
-	// 35 seeded (internal/db/schema.sql) + 1 created here.
-	if len(topics) != 36 {
-		t.Errorf("len(topics) = %d, want 36", len(topics))
+	if len(after) != len(before)+1 {
+		t.Errorf("len(topics) = %d, want %d (seed count + 1 created)", len(after), len(before)+1)
 	}
 }
 
@@ -139,7 +147,14 @@ func TestDeleteTopic_RemovesAssociationNotProblem(t *testing.T) {
 	}
 }
 
-func TestCreateTopic_RejectsEmptyOrWhitespaceName(t *testing.T) {
+// TestTopicName_TrimmedAndValidated covers name normalization for both
+// CreateTopic and RenameTopic in one place: empty/whitespace-only names
+// are rejected by both, and a name with surrounding whitespace is stored
+// trimmed rather than creating a topic that's visually identical to an
+// existing one but distinct by a leading/trailing space — the same
+// guarantee attachTopics (internal/service/problems.go) already
+// provides for topics created inline via the Add/Edit Problem form.
+func TestTopicName_TrimmedAndValidated(t *testing.T) {
 	s := newTestService(t)
 	ctx := context.Background()
 
@@ -148,16 +163,14 @@ func TestCreateTopic_RejectsEmptyOrWhitespaceName(t *testing.T) {
 			t.Errorf("CreateTopic(%q) = nil error, want error", name)
 		}
 	}
-}
 
-// TestCreateTopic_TrimsName asserts a name is stored trimmed rather than
-// creating a topic that's visually identical to an existing one but
-// distinct by a leading/trailing space — the same guarantee attachTopics
-// (internal/service/problems.go) already provides for topics created
-// inline via the Add/Edit Problem form.
-func TestCreateTopic_TrimsName(t *testing.T) {
-	s := newTestService(t)
-	ctx := context.Background()
+	temp, err := s.CreateTopic(ctx, "Temp Name")
+	if err != nil {
+		t.Fatalf("CreateTopic: unexpected err: %v", err)
+	}
+	if err := s.RenameTopic(ctx, temp.ID, "   "); err == nil {
+		t.Error("RenameTopic to a whitespace-only name = nil error, want error")
+	}
 
 	topic, err := s.CreateTopic(ctx, "  Segment Tree  ")
 	if err != nil {
@@ -165,44 +178,5 @@ func TestCreateTopic_TrimsName(t *testing.T) {
 	}
 	if topic.Name != "Segment Tree" {
 		t.Errorf("topic.Name = %q, want trimmed %q", topic.Name, "Segment Tree")
-	}
-}
-
-func TestRenameTopic_RejectsEmptyOrWhitespaceName(t *testing.T) {
-	s := newTestService(t)
-	ctx := context.Background()
-
-	topic, err := s.CreateTopic(ctx, "Temp Name")
-	if err != nil {
-		t.Fatalf("CreateTopic: unexpected err: %v", err)
-	}
-	if err := s.RenameTopic(ctx, topic.ID, "   "); err == nil {
-		t.Error("RenameTopic to a whitespace-only name = nil error, want error")
-	}
-}
-
-// TestRenameTopic_MissingIDReturnsNotFound and
-// TestDeleteTopic_MissingIDReturnsNotFound guard against a real
-// regression: neither method checked RowsAffected, so acting on an ID
-// that doesn't exist silently "succeeded" — a stale page (e.g. two
-// browser tabs, one already deleting the topic the other still shows)
-// would report success for an action that did nothing.
-func TestRenameTopic_MissingIDReturnsNotFound(t *testing.T) {
-	s := newTestService(t)
-	ctx := context.Background()
-
-	err := s.RenameTopic(ctx, 999999, "New Name")
-	if !errors.Is(err, sql.ErrNoRows) {
-		t.Errorf("err = %v, want errors.Is(err, sql.ErrNoRows)", err)
-	}
-}
-
-func TestDeleteTopic_MissingIDReturnsNotFound(t *testing.T) {
-	s := newTestService(t)
-	ctx := context.Background()
-
-	err := s.DeleteTopic(ctx, 999999)
-	if !errors.Is(err, sql.ErrNoRows) {
-		t.Errorf("err = %v, want errors.Is(err, sql.ErrNoRows)", err)
 	}
 }

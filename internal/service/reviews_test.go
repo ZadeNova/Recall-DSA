@@ -242,6 +242,49 @@ func TestRecommendDue_Pagination(t *testing.T) {
 	if len(page3) != 1 {
 		t.Errorf("len(page3) = %d, want 1 (5 items, page size 2, offset 4 -> 1 remaining)", len(page3))
 	}
+
+	assertPagesCoverEachItemExactlyOnce(t, s, ids)
+}
+
+// assertPagesCoverEachItemExactlyOnce walks every page of RecommendDue at
+// page size 2 and checks the pages together contain each wantIDs exactly
+// once.
+//
+// This is the assertion the page-length checks above cannot make. All the
+// seeded problems share one next_review_date — the normal case, since
+// next_review_date is a date and a bulk import deliberately clusters
+// rows onto each day — and paging is separate queries at different
+// offsets. Rows tied on every ORDER BY term have no guaranteed order, so
+// without a total sort the pages can disagree about which tied row comes
+// first: one problem appears on two pages and another appears on none,
+// silently vanishing from the due list. See dueOrderBy.
+func assertPagesCoverEachItemExactlyOnce(t *testing.T, s *Service, wantIDs []int64) {
+	t.Helper()
+
+	const pageSize = 2
+	seen := map[int64]int{}
+	for offset := 0; offset < len(wantIDs); offset += pageSize {
+		page, _, err := s.RecommendDue(context.Background(), nil, pageSize, offset)
+		if err != nil {
+			t.Fatalf("RecommendDue(offset=%d): unexpected err: %v", offset, err)
+		}
+		for _, item := range page {
+			seen[item.ID]++
+		}
+	}
+
+	for _, id := range wantIDs {
+		switch seen[id] {
+		case 1: // present exactly once, as required
+		case 0:
+			t.Errorf("problem %d never appeared on any page — a due problem is unreachable through pagination", id)
+		default:
+			t.Errorf("problem %d appeared on %d pages — a duplicate here means another problem was skipped", id, seen[id])
+		}
+	}
+	if len(seen) != len(wantIDs) {
+		t.Errorf("pages covered %d distinct problems, want %d", len(seen), len(wantIDs))
+	}
 }
 
 func TestRecommendUpcoming_WindowBoundaryAndOrdering(t *testing.T) {
@@ -298,68 +341,67 @@ func TestRecommendUpcoming_WindowBoundaryAndOrdering(t *testing.T) {
 	}
 }
 
-func TestRecommendUpcoming_FiltersByTopic(t *testing.T) {
-	s := newTestService(t)
-	ctx := context.Background()
-	at := time.Now()
+// TestRecommendDueAndUpcoming_FilterByTopic covers RecommendDue and
+// RecommendUpcoming's topic filter, both built on the same
+// appendTopicJoin (reviews.go) — one shared setup, one subtest per
+// method, so their join semantics are proven not to have drifted apart
+// without duplicating the seed data twice.
+func TestRecommendDueAndUpcoming_FilterByTopic(t *testing.T) {
+	seedTwoTopics := func(t *testing.T, s *Service, ctx context.Context, at time.Time) (graphsID int64) {
+		t.Helper()
+		graphs, err := s.AddProblem(ctx, AddProblemInput{
+			Title: "Number of Islands", URL: "number-of-islands", Difficulty: DifficultyMedium,
+			Topics: []string{"Graphs"}, Grade: scheduler.Good, At: at,
+		})
+		if err != nil {
+			t.Fatalf("AddProblem: unexpected err: %v", err)
+		}
+		if _, err := s.AddProblem(ctx, AddProblemInput{
+			Title: "Two Sum", URL: "two-sum", Difficulty: DifficultyEasy,
+			Topics: []string{"Arrays & Hashing"}, Grade: scheduler.Good, At: at,
+		}); err != nil {
+			t.Fatalf("AddProblem: unexpected err: %v", err)
+		}
+		return graphs.ID
+	}
 
-	graphs, err := s.AddProblem(ctx, AddProblemInput{
-		Title: "Number of Islands", URL: "number-of-islands", Difficulty: DifficultyMedium,
-		Topics: []string{"Graphs"}, Grade: scheduler.Good, At: at,
+	t.Run("RecommendDue", func(t *testing.T) {
+		s := newTestService(t)
+		ctx := context.Background()
+		at := time.Now()
+		graphsID := seedTwoTopics(t, s, ctx, at)
+
+		// Both problems' next_review_date is already overdue relative to a
+		// far-future fixed "today", so the topic filter is the only thing
+		// distinguishing the results.
+		fixedClock(s, at.AddDate(1, 0, 0))
+
+		topic := "Graphs"
+		due, _, err := s.RecommendDue(ctx, &topic, 100, 0)
+		if err != nil {
+			t.Fatalf("RecommendDue: unexpected err: %v", err)
+		}
+		if len(due) != 1 || due[0].ID != graphsID {
+			t.Errorf("RecommendDue(topic=Graphs) = %+v, want just Number of Islands", due)
+		}
 	})
-	if err != nil {
-		t.Fatalf("AddProblem: unexpected err: %v", err)
-	}
-	if _, err := s.AddProblem(ctx, AddProblemInput{
-		Title: "Two Sum", URL: "two-sum", Difficulty: DifficultyEasy,
-		Topics: []string{"Arrays & Hashing"}, Grade: scheduler.Good, At: at,
-	}); err != nil {
-		t.Fatalf("AddProblem: unexpected err: %v", err)
-	}
 
-	// Both problems were just graded Good (5-day interval), so both fall
-	// inside a 7-day upcoming window relative to "now" — the topic filter
-	// is the only thing distinguishing the results.
-	topic := "Graphs"
-	upcoming, _, err := s.RecommendUpcoming(ctx, &topic, 7, 100, 0)
-	if err != nil {
-		t.Fatalf("RecommendUpcoming: unexpected err: %v", err)
-	}
-	if len(upcoming) != 1 || upcoming[0].ID != graphs.ID {
-		t.Errorf("RecommendUpcoming(topic=Graphs) = %+v, want just Number of Islands", upcoming)
-	}
-}
+	t.Run("RecommendUpcoming", func(t *testing.T) {
+		s := newTestService(t)
+		ctx := context.Background()
+		at := time.Now()
+		graphsID := seedTwoTopics(t, s, ctx, at)
 
-func TestRecommendDue_FiltersByTopic(t *testing.T) {
-	s := newTestService(t)
-	ctx := context.Background()
-	at := time.Now()
-
-	graphs, err := s.AddProblem(ctx, AddProblemInput{
-		Title: "Number of Islands", URL: "number-of-islands", Difficulty: DifficultyMedium,
-		Topics: []string{"Graphs"}, Grade: scheduler.Good, At: at,
+		// Both problems were just graded Good (5-day interval), so both fall
+		// inside a 7-day upcoming window relative to "now" — the topic
+		// filter is the only thing distinguishing the results.
+		topic := "Graphs"
+		upcoming, _, err := s.RecommendUpcoming(ctx, &topic, 7, 100, 0)
+		if err != nil {
+			t.Fatalf("RecommendUpcoming: unexpected err: %v", err)
+		}
+		if len(upcoming) != 1 || upcoming[0].ID != graphsID {
+			t.Errorf("RecommendUpcoming(topic=Graphs) = %+v, want just Number of Islands", upcoming)
+		}
 	})
-	if err != nil {
-		t.Fatalf("AddProblem: unexpected err: %v", err)
-	}
-	if _, err := s.AddProblem(ctx, AddProblemInput{
-		Title: "Two Sum", URL: "two-sum", Difficulty: DifficultyEasy,
-		Topics: []string{"Arrays & Hashing"}, Grade: scheduler.Good, At: at,
-	}); err != nil {
-		t.Fatalf("AddProblem: unexpected err: %v", err)
-	}
-
-	// Both problems' next_review_date is already overdue relative to a
-	// far-future fixed "today", so the topic filter is the only thing
-	// distinguishing the results.
-	fixedClock(s, at.AddDate(1, 0, 0))
-
-	topic := "Graphs"
-	due, _, err := s.RecommendDue(ctx, &topic, 100, 0)
-	if err != nil {
-		t.Fatalf("RecommendDue: unexpected err: %v", err)
-	}
-	if len(due) != 1 || due[0].ID != graphs.ID {
-		t.Errorf("RecommendDue(topic=Graphs) = %+v, want just Number of Islands", due)
-	}
 }

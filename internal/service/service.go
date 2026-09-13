@@ -77,17 +77,56 @@ type Service struct {
 // New constructs a Service. loc should be loaded by the caller (e.g.
 // time.LoadLocation("Asia/Singapore")) — this package makes no timezone
 // assumptions of its own, so a self-hoster can configure their own.
-func New(db *sql.DB, loc *time.Location) *Service {
-	return &Service{db: db, loc: loc, now: time.Now}
+func New(db *sql.DB, loc *time.Location, opts ...Option) *Service {
+	s := &Service{db: db, loc: loc, now: time.Now}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s
+}
+
+// Option configures a Service at construction.
+type Option func(*Service)
+
+// WithClock replaces the source of "now". Everything date-dependent in
+// the app — which problems are due, what next_review_date a grade lands
+// on, the day-offsets on the Library page — derives from it, so pinning
+// it makes all of that testable, including from packages outside this
+// one (SPEC.md §4 calls the day-boundary behavior out as
+// correctness-critical, and it can only be tested by controlling the
+// clock).
+func WithClock(now func() time.Time) Option {
+	return func(s *Service) { s.now = now }
+}
+
+// Now is the service's current time. Callers that need to timestamp an
+// action (e.g. httpapi's grade and add-problem handlers, filling in
+// AddProblemInput.At) must use this rather than time.Now directly, so
+// there is exactly one clock in the application and pinning it via
+// WithClock actually pins everything.
+func (s *Service) Now() time.Time {
+	return s.now()
 }
 
 // withTx runs fn inside a transaction, committing on success and rolling
-// back on any error fn returns.
+// back on any error fn returns — or on a panic, which is rolled back
+// before the panic continues unwinding. Without that, a panic would
+// escape with the transaction still open, and since net/http recovers
+// per-request the process would survive while never returning that
+// connection to the pool. The pool holds exactly one connection (see
+// db.Open), so a single leak would wedge every subsequent request rather
+// than merely degrading throughput.
 func (s *Service) withTx(ctx context.Context, fn func(*sql.Tx) error) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("service: begin tx: %w", err)
 	}
+	defer func() {
+		if p := recover(); p != nil {
+			tx.Rollback()
+			panic(p)
+		}
+	}()
 
 	if err := fn(tx); err != nil {
 		tx.Rollback()

@@ -17,14 +17,15 @@ func TestParseImportRows(t *testing.T) {
 		"Bad Difficulty,https://leetcode.com/problems/bad-difficulty/,Extreme,Arrays\n" +
 		"No Topics,https://leetcode.com/problems/no-topics/,Easy,\n" +
 		",https://leetcode.com/problems/blank-title/,Easy,Arrays\n" +
-		"Dup,https://leetcode.com/problems/two-sum/,Easy,Arrays\n"
+		"Dup,https://leetcode.com/problems/two-sum/,Easy,Arrays\n" +
+		"Too,Few,Columns\n"
 
 	rows, err := parseImportRows(csv)
 	if err != nil {
 		t.Fatalf("parseImportRows: unexpected err: %v", err)
 	}
-	if len(rows) != 5 {
-		t.Fatalf("len(rows) = %d, want 5", len(rows))
+	if len(rows) != 6 {
+		t.Fatalf("len(rows) = %d, want 6", len(rows))
 	}
 
 	if rows[0].Status != "new" {
@@ -45,15 +46,8 @@ func TestParseImportRows(t *testing.T) {
 	if rows[4].Status != "error" || !strings.Contains(rows[4].Issue, "duplicate") {
 		t.Errorf("row 4 (duplicate slug) status = %q issue = %q, want error mentioning duplicate", rows[4].Status, rows[4].Issue)
 	}
-}
-
-func TestParseImportRows_MalformedColumnCount(t *testing.T) {
-	rows, err := parseImportRows("title,url,difficulty,topics\nToo,Few,Columns\n")
-	if err != nil {
-		t.Fatalf("parseImportRows: unexpected err: %v", err)
-	}
-	if len(rows) != 1 || rows[0].Status != "error" {
-		t.Fatalf("rows = %+v, want a single error row for the malformed line", rows)
+	if rows[5].Status != "error" {
+		t.Errorf("row 5 (malformed column count) status = %q, want error", rows[5].Status)
 	}
 }
 

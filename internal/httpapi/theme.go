@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"html/template"
 	"net/http"
+	"net/url"
 	"strings"
 )
 
@@ -109,9 +110,39 @@ func (s *Server) handleSetTheme(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	redirect := r.Referer()
-	if redirect == "" {
-		redirect = "/"
+	http.Redirect(w, r, localRedirectTarget(r.Referer(), r.Host), http.StatusSeeOther)
+}
+
+// localRedirectTarget reduces a Referer to a path on this site, falling
+// back to "/" for anything else. Referer is chosen by the client, so
+// forwarding it into a redirect unchecked lets any page that links here
+// decide where the visitor lands — including an external origin. Only a
+// path on this same host survives, and only the path and query of it,
+// never the scheme or host: a foreign host is dropped, and so is a
+// leading "//" or "/\", which browsers read as a protocol-relative URL
+// to somewhere else even though it looks like a local path.
+func localRedirectTarget(referer, host string) string {
+	const fallback = "/"
+	if referer == "" {
+		return fallback
 	}
-	http.Redirect(w, r, redirect, http.StatusSeeOther)
+	parsed, err := url.Parse(referer)
+	if err != nil {
+		return fallback
+	}
+	// A same-origin Referer is an absolute URL, so its own host is
+	// expected — it just has to be this one.
+	if parsed.Host != "" && parsed.Host != host {
+		return fallback
+	}
+	// Validate the decoded path but emit the escaped one: "/%5Cevil" and
+	// "/\evil" are the same target, and only the decoded form makes that
+	// visible.
+	if p := parsed.Path; !strings.HasPrefix(p, "/") || strings.HasPrefix(p, "//") || strings.HasPrefix(p, "/\\") {
+		return fallback
+	}
+	if parsed.RawQuery != "" {
+		return parsed.EscapedPath() + "?" + parsed.RawQuery
+	}
+	return parsed.EscapedPath()
 }

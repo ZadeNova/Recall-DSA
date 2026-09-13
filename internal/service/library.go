@@ -35,14 +35,21 @@ func (s *Service) ListLibrary(ctx context.Context, filter ListProblemsFilter) ([
 // libraryOrderBy maps a sort name to a whitelisted ORDER BY clause —
 // never built from raw user input, so there's no injection surface even
 // though it's concatenated directly into the query.
+//
+// Every branch ends in rs.problem_id so the sort is total: title and
+// difficulty both tie freely, and rows tied on every ORDER BY term have
+// no guaranteed order, which makes paging (two independent queries at
+// different offsets) able to repeat one row and skip another. See
+// dueOrderBy in reviews.go for the full reasoning, including why the
+// tiebreaker is spelled rs.problem_id rather than the equal p.id.
 func libraryOrderBy(sort string) string {
 	switch sort {
 	case "title":
-		return "p.title ASC"
+		return "p.title ASC, rs.problem_id ASC"
 	case "difficulty":
-		return "CASE p.difficulty WHEN 'Easy' THEN 1 WHEN 'Medium' THEN 2 WHEN 'Hard' THEN 3 ELSE 4 END ASC, p.title ASC"
+		return "CASE p.difficulty WHEN 'Easy' THEN 1 WHEN 'Medium' THEN 2 WHEN 'Hard' THEN 3 ELSE 4 END ASC, p.title ASC, rs.problem_id ASC"
 	default:
-		return "rs.next_review_date ASC, p.title ASC"
+		return "rs.next_review_date ASC, p.title ASC, rs.problem_id ASC"
 	}
 }
 

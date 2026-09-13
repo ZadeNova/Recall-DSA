@@ -268,32 +268,9 @@ func TestUpdateProblem_RejectsDuplicateSlug(t *testing.T) {
 	}
 }
 
-// TestUpdateProblem_MissingIDReturnsNotFound and
-// TestDeleteProblem_MissingIDReturnsNotFound guard against a real
-// regression: neither method checked RowsAffected, so
-// POST /problems/99999/update or .../delete silently "succeeded" and
-// redirected as if it had worked, for an ID that was never touched.
-func TestUpdateProblem_MissingIDReturnsNotFound(t *testing.T) {
-	s := newTestService(t)
-	ctx := context.Background()
-
-	err := s.UpdateProblem(ctx, 999999, UpdateProblemInput{
-		Title: "Ghost", URL: "ghost", Difficulty: DifficultyEasy,
-	})
-	if !errors.Is(err, sql.ErrNoRows) {
-		t.Errorf("err = %v, want errors.Is(err, sql.ErrNoRows)", err)
-	}
-}
-
-func TestDeleteProblem_MissingIDReturnsNotFound(t *testing.T) {
-	s := newTestService(t)
-	ctx := context.Background()
-
-	err := s.DeleteProblem(ctx, 999999)
-	if !errors.Is(err, sql.ErrNoRows) {
-		t.Errorf("err = %v, want errors.Is(err, sql.ErrNoRows)", err)
-	}
-}
+// Missing-ID coverage for UpdateProblem/DeleteProblem lives in
+// TestMissingID_ReturnsNotFound (shared_test.go), alongside the same
+// regression for RenameTopic/DeleteTopic.
 
 func TestDeleteProblem_CascadesAtServiceLevel(t *testing.T) {
 	s := newTestService(t)
@@ -328,5 +305,45 @@ func TestDeleteProblem_CascadesAtServiceLevel(t *testing.T) {
 	}
 	if attemptCount != 0 {
 		t.Errorf("attempts remaining after delete = %d, want 0", attemptCount)
+	}
+}
+
+// TestWithTx_PanicRollsBackAndReleasesConnection covers the panic path in
+// withTx. A panic used to escape with the transaction still open; since
+// net/http recovers per-request the process would survive while never
+// returning that connection to the pool. The pool holds exactly one
+// connection (db.Open), so a single leak wedges every later request —
+// which is what the follow-up query here detects. It also checks the
+// aborted write left nothing behind.
+func TestWithTx_PanicRollsBackAndReleasesConnection(t *testing.T) {
+	s := newTestService(t)
+	ctx := context.Background()
+
+	func() {
+		defer func() {
+			if p := recover(); p == nil {
+				t.Error("withTx swallowed the panic, want it to keep unwinding after rollback")
+			}
+		}()
+		_ = s.withTx(ctx, func(tx *sql.Tx) error {
+			if _, err := tx.ExecContext(ctx,
+				`INSERT INTO problems (title, url, difficulty, slug) VALUES (?, ?, ?, ?)`,
+				"Doomed", "https://leetcode.com/problems/doomed/", DifficultyEasy, "doomed",
+			); err != nil {
+				t.Errorf("seed insert: unexpected err: %v", err)
+			}
+			panic("boom")
+		})
+	}()
+
+	// Would block until the context deadline if the connection leaked.
+	queryCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	var count int
+	if err := s.db.QueryRowContext(queryCtx, `SELECT COUNT(*) FROM problems`).Scan(&count); err != nil {
+		t.Fatalf("query after panicking tx: %v (the connection was never returned to the pool)", err)
+	}
+	if count != 0 {
+		t.Errorf("problems after panicking tx = %d, want 0 (the insert must have rolled back)", count)
 	}
 }

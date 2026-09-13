@@ -46,9 +46,19 @@ func main() {
 		log.Fatalf("build server: %v", err)
 	}
 
+	// Timeouts bound how long one connection can tie up a goroutine and a
+	// file descriptor. Without them a stalled or half-open connection
+	// holds both indefinitely, which matters more on a 4GB Pi than on a
+	// dev laptop. WriteTimeout is the generous one: a bulk import of a
+	// few hundred rows commits in a single transaction before its
+	// response is written.
 	httpServer := &http.Server{
-		Addr:    *addr,
-		Handler: srv.Routes(),
+		Addr:              *addr,
+		Handler:           srv.Routes(),
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      60 * time.Second,
+		IdleTimeout:       120 * time.Second,
 	}
 
 	// ctx's Done channel closes the moment the process receives SIGINT

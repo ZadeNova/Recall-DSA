@@ -3,20 +3,21 @@
 <p class="page-subtitle">Catalog new LeetCode questions, set active difficulty tags, and initialize Spaced Repetition SRS schedules.</p>
 <hr class="page-divider">
 {{if .Error}}<p class="error">{{.Error}}</p>{{end}}
+{{if .Notice}}<p class="notice">{{.Notice}}</p>{{end}}
 <form method="post" action="/problems">
   <div class="field-row">
     <div>
       <div class="field-header"><label for="title">Title</label><span class="field-hint">e.g. Trapping Rain Water</span></div>
-      <input type="text" id="title" name="title" placeholder="e.g., Two Sum" required>
+      <input type="text" id="title" name="title" value="{{.Problem.Title}}" placeholder="e.g., Two Sum" required>
     </div>
     <div>
       <div class="field-header"><label for="url">LeetCode URL or slug</label><span class="field-hint">full URL or question slug</span></div>
-      <input type="text" id="url" name="url" class="mono" placeholder="https://leetcode.com/problems/... or two-sum" required>
+      <input type="text" id="url" name="url" class="mono" value="{{.Problem.URL}}" placeholder="https://leetcode.com/problems/... or two-sum" required>
     </div>
   </div>
 
   <p class="section-title">Difficulty</p>
-  {{template "difficulty-picker" "Easy"}}
+  {{if .Problem.Difficulty}}{{template "difficulty-picker" .Problem.Difficulty}}{{else}}{{template "difficulty-picker" "Easy"}}{{end}}
 
   {{template "topic-picker" .}}
 

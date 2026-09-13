@@ -37,6 +37,29 @@ func Open(path string) (*sql.DB, error) {
 		return nil, fmt.Errorf("db: open %s: %w", path, err)
 	}
 
+	// One connection, so every read and write is serialized.
+	//
+	// This is not just a performance posture — it closes a correctness
+	// hole busy_timeout cannot. Every write in the service layer reads
+	// before it writes inside the same transaction (load review_state,
+	// then upsert it; look up a slug, then insert). Go's BeginTx issues a
+	// plain BEGIN, which in WAL mode takes a read snapshot first and only
+	// tries to upgrade to a write lock at the first write. If another
+	// connection committed in between, that upgrade fails immediately
+	// with SQLITE_BUSY_SNAPSHOT — the busy handler is never consulted,
+	// because no amount of waiting can make a stale snapshot valid. With
+	// a single connection there is no second writer, so the upgrade can
+	// never lose that race.
+	//
+	// Safe here because no query path opens a second connection while
+	// holding the first: transactional work all goes through the *sql.Tx
+	// itself, and the one place that queries after another query is
+	// scanReviewItems, which fully drains its outer rows (releasing the
+	// connection) before batch-loading topics. That's covered by
+	// TestRecommendDue_NoConnectionPoolDeadlockUnderSingleConnection,
+	// which runs under exactly this setting.
+	conn.SetMaxOpenConns(1)
+
 	if _, err := conn.Exec(schemaSQL); err != nil {
 		conn.Close()
 		return nil, fmt.Errorf("db: apply schema: %w", err)

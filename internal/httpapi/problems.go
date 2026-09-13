@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/ZadeNova/recall-dsa/internal/scheduler"
 	"github.com/ZadeNova/recall-dsa/internal/service"
@@ -22,6 +21,7 @@ type problemFormData struct {
 	AllTopics []string
 	Selected  map[string]bool
 	Error     string
+	Notice    string
 }
 
 func splitTopics(raw string) []string {
@@ -102,10 +102,11 @@ func (s *Server) handleCreateProblem(w http.ResponseWriter, r *http.Request) {
 		Difficulty: service.Difficulty(r.PostForm.Get("difficulty")),
 		Topics:     topics,
 		Grade:      scheduler.Grade(r.PostForm.Get("grade")),
-		At:         time.Now(),
+		At:         s.svc.Now(),
 	}
 
-	if _, err := s.svc.AddProblem(r.Context(), input); err != nil {
+	result, err := s.svc.AddProblem(r.Context(), input)
+	if err != nil {
 		names, nameErr := s.topicNames(r)
 		if nameErr != nil {
 			s.renderError(w, r, http.StatusInternalServerError, nameErr)
@@ -116,6 +117,29 @@ func (s *Server) handleCreateProblem(w http.ResponseWriter, r *http.Request) {
 			AllTopics: names,
 			Selected:  selectedSet(topics),
 			Error:     err.Error(),
+		})
+		return
+	}
+
+	// A re-add is a materially different outcome from a create: the grade
+	// landed on an existing problem and everything else typed into the
+	// form was discarded (SPEC.md §9 keeps the existing row's fields).
+	// Redirecting to /due the same way a real create does would leave no
+	// trace of either fact, so say so on the form instead of bouncing
+	// away from it.
+	if !result.Created {
+		names, nameErr := s.topicNames(r)
+		if nameErr != nil {
+			s.renderError(w, r, http.StatusInternalServerError, nameErr)
+			return
+		}
+		s.render(w, r, s.tpl.addForm, problemFormData{
+			AllTopics: names,
+			Selected:  map[string]bool{},
+			Notice: fmt.Sprintf(
+				"%q was already tracked — your %s grade was recorded against the existing entry. Its title, difficulty, and topics were left unchanged.",
+				result.Title, input.Grade,
+			),
 		})
 		return
 	}

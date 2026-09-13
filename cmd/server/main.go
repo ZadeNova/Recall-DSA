@@ -11,6 +11,7 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
+	_ "time/tzdata" // embed the IANA database: the deployed container image has no /usr/share/zoneinfo
 
 	"github.com/ZadeNova/recall-dsa/internal/db"
 	"github.com/ZadeNova/recall-dsa/internal/httpapi"

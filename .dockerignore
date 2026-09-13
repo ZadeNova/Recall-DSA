@@ -1,5 +1,7 @@
+.git
+.claude
+data
 recall.db
 recall.db-shm
 recall.db-wal
-.env
-data/
+*.md

@@ -53,9 +53,8 @@ See SPEC.md §13 for the full list. If asked to add anything on it (Postgres, lo
 
 ## Commands
 
-_Fill in once established:_
-
-- Build:
-- Run:
-- Test:
-- Migrate:
+- Build: `go build ./...`
+- Run: `go run ./cmd/server` (flags: `-db`, `-addr`, `-tz` — see `cmd/server/main.go`)
+- Test: `go test ./...`
+- Migrate: none — `internal/db/schema.sql` is idempotent DDL, applied on every startup; seed data is gated separately (see `internal/db/db.go`'s `seedTopicsIfEmpty`)
+- Deploy: see `DEPLOY.md` (Docker + Tailscale, SPEC.md §10)

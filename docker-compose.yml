@@ -1,0 +1,23 @@
+services:
+  recall-dsa:
+    build: .
+    container_name: recall-dsa
+    restart: unless-stopped
+    command: ["-db=/data/recall.db", "-addr=0.0.0.0:8080", "-tz=Asia/Singapore"]
+    # Bound to the tailnet IP specifically (see .env.example), not
+    # 0.0.0.0 — SPEC.md §10: this app is Tailscale-only, never exposed on
+    # the LAN or public internet. The app itself binds 0.0.0.0 *inside*
+    # its own network namespace above, which is correct and harmless —
+    # nothing outside the container can reach that namespace directly;
+    # this host-side publish is the actual exposure boundary.
+    ports:
+      - "${TAILSCALE_IP:?set TAILSCALE_IP in .env — see .env.example}:8080:8080"
+    volumes:
+      # Bind mount, not a named volume: recall.db needs to be readable
+      # directly from the host by scripts/backup.sh. The DB file is
+      # never part of the image — db.Open() creates it here on first run
+      # if it doesn't already exist. The :z suffix relabels the host
+      # directory for container access on SELinux-enforcing hosts
+      # (Fedora/RHEL); it's a silent no-op on hosts without SELinux
+      # (e.g. Raspberry Pi OS), so it's safe to always include.
+      - ./data:/data:z

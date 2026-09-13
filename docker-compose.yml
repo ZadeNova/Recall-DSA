@@ -1,6 +1,7 @@
 services:
   recall-dsa:
     build: .
+    image: ghcr.io/zadenova/recall-dsa:latest
     container_name: recall-dsa
     restart: unless-stopped
     command: ["-db=/data/recall.db", "-addr=0.0.0.0:8080", "-tz=Asia/Singapore"]

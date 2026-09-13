@@ -4,13 +4,15 @@
 # specifically so this works: the IANA timezone database is embedded in
 # the binary rather than read from /usr/share/zoneinfo, which distroless
 # doesn't have.
-FROM golang:1.26-alpine AS builder
+FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS builder
+ARG TARGETOS
+ARG TARGETARCH
 
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 go build -o /recall-server ./cmd/server
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -o /recall-server ./cmd/server
 
 FROM gcr.io/distroless/static-debian12
 

@@ -5,7 +5,7 @@
       <p class="section-title">Topics</p>
       <p class="section-subtitle">Assign DSA algorithm categories and patterns to this problem.</p>
     </div>
-    <input type="text" class="topic-filter" placeholder="Filter topics..." oninput="filterTopicChips(this)">
+    <input type="text" class="topic-filter" placeholder="Filter topics..." oninput="filterTopicChips(this)" onkeydown="if (event.key === 'Enter') event.preventDefault()">
   </div>
   <div class="topic-chips">
     {{range .AllTopics}}

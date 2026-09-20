@@ -186,6 +186,7 @@
   .new-topic-row input[type="text"] { flex: 1; min-width: 200px; }
   .topic-chips { display: flex; flex-wrap: wrap; gap: 0.3rem; max-height: 220px; overflow-y: auto; padding: 0.6rem; border: 1px solid var(--border); border-radius: 4px; }
   .topic-chip { display: inline-flex; align-items: center; gap: 0.3rem; padding: 0.15rem 0.55rem; border-radius: 999px; background: var(--tag-bg); color: var(--tag-accent); font-size: 12px; font-weight: 500; cursor: pointer; }
+  .topic-chip[hidden] { display: none; }
   .topic-chip:has(input:checked) { background: var(--tag-accent); color: var(--color-base); }
   .topic-chip input[type="checkbox"] { margin: 0; }
   /* The underlying inputs are display:none (custom pill/chip/card look),

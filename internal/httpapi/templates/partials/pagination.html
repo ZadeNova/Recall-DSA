@@ -9,7 +9,7 @@
         {{$pageSize := .PageSize}}
         {{range .PageSizeOptions}}<option value="{{.}}" {{if eq $pageSize .}}selected{{end}}>{{.}} rows</option>{{end}}
       </select>
-      <button type="submit" class="btn-secondary">Apply</button>
+      <noscript><button type="submit" class="btn-secondary">Apply</button></noscript>
     </form>
     {{if .NextURL}}<a href="{{.NextURL}}" class="btn-secondary">Next &raquo;</a>{{end}}
   </span>

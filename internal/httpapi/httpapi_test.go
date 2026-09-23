@@ -1036,3 +1036,65 @@ func TestCreateProblem_ExistingSlugReportsMergeInsteadOfSilentRedirect(t *testin
 		t.Errorf("last_grade = %q, want Failed (the grade is the one thing a re-add does apply)", items[0].LastGrade)
 	}
 }
+
+func TestCreateProblem_ReAddingAPausedProblemSaysSoAndKeepsItPaused(t *testing.T) {
+	h, svc := newTestServer(t)
+	ctx := t.Context()
+
+	added, err := svc.AddProblem(ctx, service.AddProblemInput{
+		Title: "Two Sum", URL: "two-sum", Difficulty: service.DifficultyEasy, Grade: "Good", At: time.Now(),
+	})
+	if err != nil {
+		t.Fatalf("AddProblem: unexpected err: %v", err)
+	}
+	if _, err := svc.PauseProblems(ctx, []int64{added.ID}); err != nil {
+		t.Fatalf("PauseProblems: unexpected err: %v", err)
+	}
+
+	rec := doForm(t, h, http.MethodPost, "/problems", url.Values{
+		"title":      {"Two Sum"},
+		"url":        {"https://leetcode.com/problems/two-sum/"},
+		"difficulty": {"Easy"},
+		"grade":      {"Easy"},
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (form re-rendered with a notice):\n%s", rec.Code, rec.Body.String())
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, "already tracked") {
+		t.Errorf("response missing the already-tracked notice:\n%s", body)
+	}
+	if !strings.Contains(body, "currently paused") {
+		t.Errorf("response missing the paused note:\n%s", body)
+	}
+
+	items, total, err := svc.ListLibrary(ctx, service.ListProblemsFilter{Status: service.StatusPaused})
+	if err != nil {
+		t.Fatalf("ListLibrary: unexpected err: %v", err)
+	}
+	if total != 1 || items[0].LastGrade != "Easy" {
+		t.Errorf("paused list = %d rows, last grade %q; want the one problem, still paused, with the Easy grade recorded",
+			total, items[0].LastGrade)
+	}
+}
+
+func TestCreateProblem_ReAddingAnActiveProblemHasNoPausedNote(t *testing.T) {
+	h, svc := newTestServer(t)
+
+	if _, err := svc.AddProblem(t.Context(), service.AddProblemInput{
+		Title: "Two Sum", URL: "two-sum", Difficulty: service.DifficultyEasy, Grade: "Good", At: time.Now(),
+	}); err != nil {
+		t.Fatalf("AddProblem: unexpected err: %v", err)
+	}
+
+	rec := doForm(t, h, http.MethodPost, "/problems", url.Values{
+		"title": {"Two Sum"}, "url": {"two-sum"}, "difficulty": {"Easy"}, "grade": {"Good"},
+	})
+	body := rec.Body.String()
+	if !strings.Contains(body, "already tracked") {
+		t.Fatalf("expected the already-tracked notice:\n%s", body)
+	}
+	if strings.Contains(body, "currently paused") {
+		t.Errorf("active problem's notice mentions pausing:\n%s", body)
+	}
+}

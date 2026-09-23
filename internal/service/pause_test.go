@@ -504,6 +504,9 @@ func TestAddProblem_ExistingPausedSlugStaysPausedAndIsNotDuplicated(t *testing.T
 	if res.Created || res.ID != id {
 		t.Errorf("result = %+v, want the existing problem %d, not a new one", res, id)
 	}
+	if !res.Paused {
+		t.Error("result.Paused = false, want true so the caller can tell the user")
+	}
 	if f.pausedAt(id) == nil {
 		t.Error("re-adding a paused problem unpaused it")
 	}
@@ -528,5 +531,22 @@ func TestBulkImport_RefreshingAPausedProblemLeavesItPaused(t *testing.T) {
 	}
 	if f.pausedAt(id) == nil {
 		t.Error("bulk import refresh unpaused the problem")
+	}
+}
+
+func TestAddProblem_PausedFlagIsFalseForNewAndActiveProblems(t *testing.T) {
+	f := newPauseFixture(t)
+	in := AddProblemInput{
+		Title: "A", URL: "a", Difficulty: DifficultyEasy, Grade: scheduler.Good, At: f.s.Now(),
+	}
+
+	created, err := f.s.AddProblem(f.ctx, in)
+	if err != nil || created.Paused {
+		t.Fatalf("new problem: (Paused=%v, err=%v), want Paused=false", created.Paused, err)
+	}
+	readded, err := f.s.AddProblem(f.ctx, in)
+	if err != nil || readded.Created || readded.Paused {
+		t.Fatalf("re-add of active problem: (Created=%v, Paused=%v, err=%v), want Created=false Paused=false",
+			readded.Created, readded.Paused, err)
 	}
 }

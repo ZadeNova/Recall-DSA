@@ -153,6 +153,10 @@ func replaceTopics(ctx context.Context, q querier, problemID int64, topicNames [
 type AddProblemResult struct {
 	Problem
 	Created bool
+	// Paused reports that the problem was already paused when it was
+	// re-added. The grade is still recorded, but grading never changes
+	// pause state, so it stays out of rotation (NEW_FEATURES.md §1).
+	Paused bool
 }
 
 // AddProblem finds or creates the problem identified by input.URL's slug,
@@ -198,6 +202,13 @@ func (s *Service) AddProblem(ctx context.Context, input AddProblemInput) (AddPro
 		}
 		if _, err := recordReview(ctx, tx, s.loc, problemID, input.Grade, input.At, nil); err != nil {
 			return err
+		}
+		if !result.Created {
+			err := tx.QueryRowContext(ctx,
+				`SELECT paused_at IS NOT NULL FROM review_state WHERE problem_id = ?`, problemID).Scan(&result.Paused)
+			if err != nil {
+				return fmt.Errorf("service: check paused state for problem %d: %w", problemID, err)
+			}
 		}
 
 		result.Problem, err = loadProblem(ctx, tx, problemID)

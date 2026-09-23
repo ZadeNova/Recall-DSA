@@ -133,13 +133,17 @@ func (s *Server) handleCreateProblem(w http.ResponseWriter, r *http.Request) {
 			s.renderError(w, r, http.StatusInternalServerError, nameErr)
 			return
 		}
+		notice := fmt.Sprintf(
+			"%q was already tracked — your %s grade was recorded against the existing entry. Its title, difficulty, and topics were left unchanged.",
+			result.Title, input.Grade,
+		)
+		if result.Paused {
+			notice += " It is currently paused, so it stays out of your review queue until you unpause it in the Library."
+		}
 		s.render(w, r, s.tpl.addForm, problemFormData{
 			AllTopics: names,
 			Selected:  map[string]bool{},
-			Notice: fmt.Sprintf(
-				"%q was already tracked — your %s grade was recorded against the existing entry. Its title, difficulty, and topics were left unchanged.",
-				result.Title, input.Grade,
-			),
+			Notice:    notice,
 		})
 		return
 	}

@@ -65,12 +65,40 @@ func Open(path string) (*sql.DB, error) {
 		return nil, fmt.Errorf("db: apply schema: %w", err)
 	}
 
+	if err := ensurePausedAtColumn(conn); err != nil {
+		conn.Close()
+		return nil, err
+	}
+
 	if err := seedTopicsIfEmpty(conn); err != nil {
 		conn.Close()
 		return nil, err
 	}
 
 	return conn, nil
+}
+
+// ensurePausedAtColumn adds review_state.paused_at to databases created
+// before pause/unpause existed. schema.sql's CREATE TABLE IF NOT EXISTS
+// is a no-op against an existing table, so it can't add a column; and
+// SQLite has no ADD COLUMN IF NOT EXISTS, so this checks first to stay
+// safe to run on every startup, like the rest of the schema. Fresh
+// databases already have the column from schema.sql and skip the ALTER.
+func ensurePausedAtColumn(conn *sql.DB) error {
+	var exists bool
+	err := conn.QueryRow(
+		`SELECT EXISTS(SELECT 1 FROM pragma_table_info('review_state') WHERE name = 'paused_at')`,
+	).Scan(&exists)
+	if err != nil {
+		return fmt.Errorf("db: check review_state.paused_at: %w", err)
+	}
+	if exists {
+		return nil
+	}
+	if _, err := conn.Exec(`ALTER TABLE review_state ADD COLUMN paused_at TEXT`); err != nil {
+		return fmt.Errorf("db: add review_state.paused_at: %w", err)
+	}
+	return nil
 }
 
 // seedTopicsIfEmpty runs seedTopicsSQL only the first time this database

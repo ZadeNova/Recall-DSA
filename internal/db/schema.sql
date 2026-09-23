@@ -35,7 +35,12 @@ CREATE TABLE IF NOT EXISTS review_state (
     next_review_date TEXT NOT NULL, -- ISO8601 date (YYYY-MM-DD), so lexical
                                      -- comparison against "today" is correct
     last_grade       TEXT NOT NULL CHECK (last_grade IN ('Failed', 'Hard', 'Good', 'Easy')),
-    last_reviewed_at TEXT NOT NULL  -- RFC3339 timestamp
+    last_reviewed_at TEXT NOT NULL, -- RFC3339 timestamp
+    paused_at        TEXT           -- RFC3339 UTC timestamp; NULL = active (NEW_FEATURES.md §1).
+                                     -- Databases created before this column existed get it
+                                     -- from db.go's ensurePausedAtColumn, so nothing else in
+                                     -- this file may reference paused_at: this file runs
+                                     -- BEFORE that ALTER and would fail on an old database.
 );
 
 -- Powers the entire due-queue query (SPEC.md §4): due rows, most overdue

@@ -116,3 +116,84 @@ func TestOpen_SerializesAccessOnOneConnection(t *testing.T) {
 		t.Errorf("MaxOpenConnections = %d, want 1 (read-then-write transactions rely on there being no second writer)", got)
 	}
 }
+
+func hasPausedAtColumn(t *testing.T, conn *sql.DB) bool {
+	t.Helper()
+	var exists bool
+	err := conn.QueryRow(`SELECT EXISTS(SELECT 1 FROM pragma_table_info('review_state') WHERE name = 'paused_at')`).Scan(&exists)
+	if err != nil {
+		t.Fatalf("check paused_at column: %v", err)
+	}
+	return exists
+}
+
+func TestOpen_FreshDBHasPausedAtColumn(t *testing.T) {
+	conn := openTestDB(t)
+	if !hasPausedAtColumn(t, conn) {
+		t.Error("fresh database is missing review_state.paused_at")
+	}
+}
+
+// TestOpen_AddsPausedAtToExistingDB covers the real deployment path: a
+// database created before pause/unpause shipped. CREATE TABLE IF NOT
+// EXISTS is a no-op against it, so the column has to be added by
+// ensurePausedAtColumn — and existing rows must read as active (NULL).
+func TestOpen_AddsPausedAtToExistingDB(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "old.db")
+
+	old, err := sql.Open("sqlite", "file:"+path)
+	if err != nil {
+		t.Fatalf("open old db: %v", err)
+	}
+	_, err = old.Exec(`
+		CREATE TABLE problems (
+			id INTEGER PRIMARY KEY, title TEXT NOT NULL, url TEXT NOT NULL,
+			difficulty TEXT NOT NULL CHECK (difficulty IN ('Easy', 'Medium', 'Hard')),
+			slug TEXT NOT NULL UNIQUE
+		);
+		CREATE TABLE review_state (
+			problem_id INTEGER PRIMARY KEY REFERENCES problems (id) ON DELETE CASCADE,
+			ease_factor REAL NOT NULL, interval_days INTEGER NOT NULL, repetitions INTEGER NOT NULL,
+			next_review_date TEXT NOT NULL,
+			last_grade TEXT NOT NULL CHECK (last_grade IN ('Failed', 'Hard', 'Good', 'Easy')),
+			last_reviewed_at TEXT NOT NULL
+		);
+		INSERT INTO problems (id, title, url, difficulty, slug)
+			VALUES (1, 'Two Sum', 'https://leetcode.com/problems/two-sum/', 'Easy', 'two-sum');
+		INSERT INTO review_state VALUES (1, 2.5, 5, 1, '2026-10-01', 'Good', '2026-09-26T00:00:00Z');`)
+	if err != nil {
+		t.Fatalf("seed old db: %v", err)
+	}
+	old.Close()
+
+	conn, err := Open(path)
+	if err != nil {
+		t.Fatalf("Open on pre-pause database: %v", err)
+	}
+	defer conn.Close()
+
+	if !hasPausedAtColumn(t, conn) {
+		t.Fatal("paused_at column was not added to an existing review_state table")
+	}
+	var pausedAt sql.NullString
+	if err := conn.QueryRow(`SELECT paused_at FROM review_state WHERE problem_id = 1`).Scan(&pausedAt); err != nil {
+		t.Fatalf("read existing row: %v", err)
+	}
+	if pausedAt.Valid {
+		t.Errorf("existing row paused_at = %q, want NULL (active)", pausedAt.String)
+	}
+}
+
+func TestOpen_PausedAtMigrationIsIdempotent(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "test.db")
+	for i := 1; i <= 2; i++ {
+		conn, err := Open(path)
+		if err != nil {
+			t.Fatalf("Open #%d: %v", i, err)
+		}
+		if !hasPausedAtColumn(t, conn) {
+			t.Errorf("Open #%d: paused_at missing", i)
+		}
+		conn.Close()
+	}
+}

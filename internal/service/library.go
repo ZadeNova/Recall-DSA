@@ -16,6 +16,13 @@ func (s *Service) ListLibrary(ctx context.Context, filter ListProblemsFilter) ([
 	from, args := appendTopicJoin(from, nil, filter.Topic)
 
 	var conditions []string
+	switch filter.Status {
+	case StatusAll:
+	case StatusPaused:
+		conditions = append(conditions, `rs.paused_at IS NOT NULL`)
+	default:
+		conditions = append(conditions, activeOnly)
+	}
 	if filter.Difficulty != nil {
 		conditions = append(conditions, `p.difficulty = ?`)
 		args = append(args, *filter.Difficulty)
@@ -42,14 +49,19 @@ func (s *Service) ListLibrary(ctx context.Context, filter ListProblemsFilter) ([
 // different offsets) able to repeat one row and skip another. See
 // dueOrderBy in reviews.go for the full reasoning, including why the
 // tiebreaker is spelled rs.problem_id rather than the equal p.id.
+//
+// Every sort leads with pausedLast so that, when paused rows are shown
+// (status=all), they sort after all active ones instead of mixing in
+// with stale review dates. It's a no-op under status=active.
 func libraryOrderBy(sort string) string {
+	const pausedLast = "(rs.paused_at IS NOT NULL) ASC, "
 	switch sort {
 	case "title":
-		return "p.title ASC, rs.problem_id ASC"
+		return pausedLast + "p.title ASC, rs.problem_id ASC"
 	case "difficulty":
-		return "CASE p.difficulty WHEN 'Easy' THEN 1 WHEN 'Medium' THEN 2 WHEN 'Hard' THEN 3 ELSE 4 END ASC, p.title ASC, rs.problem_id ASC"
+		return pausedLast + "CASE p.difficulty WHEN 'Easy' THEN 1 WHEN 'Medium' THEN 2 WHEN 'Hard' THEN 3 ELSE 4 END ASC, p.title ASC, rs.problem_id ASC"
 	default:
-		return "rs.next_review_date ASC, p.title ASC, rs.problem_id ASC"
+		return pausedLast + "rs.next_review_date ASC, p.title ASC, rs.problem_id ASC"
 	}
 }
 

@@ -67,6 +67,11 @@ type ReviewState struct {
 type DueItem struct {
 	Problem
 	ReviewState
+	// PausedAt is nil for active problems. It lives here rather than on
+	// ReviewState because only the queries behind DueItem select it —
+	// ReviewState is also returned by RecordReview, which never reads it,
+	// so a zero value there would wrongly look like "active".
+	PausedAt *time.Time
 }
 
 // AddProblemInput describes a single-add form submission (SPEC.md §9):
@@ -89,6 +94,14 @@ type UpdateProblemInput struct {
 	Topics     []string
 }
 
+// Library status filter values (ListProblemsFilter.Status). Anything
+// else, including empty, is treated as StatusActive.
+const (
+	StatusActive = "active"
+	StatusPaused = "paused"
+	StatusAll    = "all"
+)
+
 // ListProblemsFilter narrows ListLibrary's results (SPEC.md §7) by
 // topic and/or difficulty, plus search/sort/pagination. A nil Topic or
 // Difficulty means "no filter on that dimension." A Limit of 0 (or
@@ -99,6 +112,7 @@ type ListProblemsFilter struct {
 	Difficulty *Difficulty
 	Search     *string
 	Sort       string // "next_review" (default), "title", or "difficulty"
+	Status     string // StatusActive (default), StatusPaused, or StatusAll
 	Limit      int
 	Offset     int
 }

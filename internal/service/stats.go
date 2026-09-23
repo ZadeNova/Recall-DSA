@@ -67,7 +67,7 @@ func (s *Service) DifficultyBreakdown(ctx context.Context) (DifficultyCounts, er
 // joins/ordering the actual gradable list needs but this badge doesn't.
 func (s *Service) CountDue(ctx context.Context) (int, error) {
 	var count int
-	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM review_state WHERE next_review_date <= ?`, s.today()).Scan(&count); err != nil {
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM review_state rs WHERE rs.next_review_date <= ? AND `+activeOnly, s.today()).Scan(&count); err != nil {
 		return 0, fmt.Errorf("service: count due: %w", err)
 	}
 	return count, nil
@@ -85,7 +85,7 @@ func (s *Service) DueStats(ctx context.Context, topic *string) (due, overdue int
 	from, args := appendTopicJoin(from, nil, topic)
 
 	query := `SELECT COUNT(*), COALESCE(SUM(CASE WHEN rs.next_review_date < ? THEN 1 ELSE 0 END), 0) ` +
-		from + ` WHERE rs.next_review_date <= ?`
+		from + ` WHERE rs.next_review_date <= ? AND ` + activeOnly
 	queryArgs := append([]any{today}, args...)
 	queryArgs = append(queryArgs, today)
 
@@ -105,10 +105,10 @@ func (s *Service) UpcomingByDay(ctx context.Context, days int) ([]DayCount, erro
 	horizon := today.AddDate(0, 0, days).Format("2006-01-02")
 
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT next_review_date, COUNT(*)
-		FROM review_state
-		WHERE next_review_date > ? AND next_review_date <= ?
-		GROUP BY next_review_date`,
+		SELECT rs.next_review_date, COUNT(*)
+		FROM review_state rs
+		WHERE rs.next_review_date > ? AND rs.next_review_date <= ? AND `+activeOnly+`
+		GROUP BY rs.next_review_date`,
 		s.today(), horizon,
 	)
 	if err != nil {
@@ -136,4 +136,15 @@ func (s *Service) UpcomingByDay(ctx context.Context, days int) ([]DayCount, erro
 		result[i] = DayCount{DaysFromNow: daysFromNow, Count: countByDate[date]}
 	}
 	return result, nil
+}
+
+// CountPaused is how many problems are currently paused out of rotation —
+// the "Paused: N" stat. Deliberately separate from CountProblems, which
+// stays "everything ever logged" regardless of pause state.
+func (s *Service) CountPaused(ctx context.Context) (int, error) {
+	var count int
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM review_state WHERE paused_at IS NOT NULL`).Scan(&count); err != nil {
+		return 0, fmt.Errorf("service: count paused: %w", err)
+	}
+	return count, nil
 }

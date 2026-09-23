@@ -117,6 +117,12 @@ func loadReviewState(ctx context.Context, q querier, problemID int64) (scheduler
 	return rs, nil
 }
 
+// activeOnly is the one definition of "in rotation", shared by every query
+// that lists or counts due work (RecommendDue, RecommendUpcoming, CountDue,
+// DueStats, UpcomingByDay). If one of them missed it, its count would
+// disagree with the list next to it. All of them alias review_state as rs.
+const activeOnly = "rs.paused_at IS NULL"
+
 // RecommendDue is the entire recommendation engine (SPEC.md §4): due
 // review_state rows, most overdue first, optionally filtered to one
 // topic, paginated. "Today" is computed in the service's configured
@@ -127,7 +133,7 @@ func (s *Service) RecommendDue(ctx context.Context, topic *string, limit, offset
 	from := `FROM review_state rs JOIN problems p ON p.id = rs.problem_id`
 	from, args := appendTopicJoin(from, nil, topic)
 
-	where := ` WHERE rs.next_review_date <= ?`
+	where := ` WHERE rs.next_review_date <= ? AND ` + activeOnly
 	args = append(args, s.today())
 
 	return s.queryReviewItems(ctx, from, where, dueOrderBy, args, limit, offset)
@@ -147,7 +153,7 @@ func (s *Service) RecommendUpcoming(ctx context.Context, topic *string, days, li
 	from := `FROM review_state rs JOIN problems p ON p.id = rs.problem_id`
 	from, args := appendTopicJoin(from, nil, topic)
 
-	where := ` WHERE rs.next_review_date > ? AND rs.next_review_date <= ?`
+	where := ` WHERE rs.next_review_date > ? AND rs.next_review_date <= ? AND ` + activeOnly
 	args = append(args, s.today(), horizon)
 
 	return s.queryReviewItems(ctx, from, where, dueOrderBy, args, limit, offset)
@@ -201,7 +207,7 @@ func (s *Service) queryReviewItems(ctx context.Context, from, where, orderBy str
 
 	query := `SELECT p.id, p.title, p.url, p.difficulty, p.slug,
 		       rs.ease_factor, rs.interval_days, rs.repetitions,
-		       rs.next_review_date, rs.last_grade, rs.last_reviewed_at ` +
+		       rs.next_review_date, rs.last_grade, rs.last_reviewed_at, rs.paused_at ` +
 		from + where + ` ORDER BY ` + orderBy
 	pageArgs := append([]any{}, args...)
 	if limit > 0 {
@@ -255,10 +261,11 @@ func (s *Service) scanReviewItems(ctx context.Context, rows *sql.Rows) ([]DueIte
 	for rows.Next() {
 		var item DueItem
 		var nextReviewDateStr, lastReviewedAtStr string
+		var pausedAtStr sql.NullString
 		if err := rows.Scan(
 			&item.ID, &item.Title, &item.URL, &item.Difficulty, &item.Slug,
 			&item.EaseFactor, &item.IntervalDays, &item.Repetitions,
-			&nextReviewDateStr, &item.LastGrade, &lastReviewedAtStr,
+			&nextReviewDateStr, &item.LastGrade, &lastReviewedAtStr, &pausedAtStr,
 		); err != nil {
 			return nil, fmt.Errorf("service: scan review item: %w", err)
 		}
@@ -271,6 +278,13 @@ func (s *Service) scanReviewItems(ctx context.Context, rows *sql.Rows) ([]DueIte
 		item.LastReviewedAt, err = time.Parse(time.RFC3339, lastReviewedAtStr)
 		if err != nil {
 			return nil, fmt.Errorf("service: parse last_reviewed_at: %w", err)
+		}
+		if pausedAtStr.Valid {
+			pausedAt, err := time.Parse(time.RFC3339, pausedAtStr.String)
+			if err != nil {
+				return nil, fmt.Errorf("service: parse paused_at: %w", err)
+			}
+			item.PausedAt = &pausedAt
 		}
 
 		items = append(items, item)

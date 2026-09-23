@@ -2,6 +2,9 @@ package service
 
 import (
 	"context"
+	"database/sql"
+	"fmt"
+	"reflect"
 	"testing"
 	"time"
 
@@ -228,5 +231,302 @@ func TestCountPaused(t *testing.T) {
 	}
 	if n != 2 {
 		t.Errorf("CountPaused = %d, want 2", n)
+	}
+}
+
+// --- write side: PauseProblems / UnpauseProblems ---
+
+func (f *pauseFixture) pausedAt(id int64) *string {
+	f.t.Helper()
+	var v sql.NullString
+	if err := f.s.db.QueryRowContext(f.ctx, `SELECT paused_at FROM review_state WHERE problem_id = ?`, id).Scan(&v); err != nil {
+		f.t.Fatalf("read paused_at: %v", err)
+	}
+	if !v.Valid {
+		return nil
+	}
+	return &v.String
+}
+
+func (f *pauseFixture) nextReview(id int64) string {
+	f.t.Helper()
+	var v string
+	if err := f.s.db.QueryRowContext(f.ctx, `SELECT next_review_date FROM review_state WHERE problem_id = ?`, id).Scan(&v); err != nil {
+		f.t.Fatalf("read next_review_date: %v", err)
+	}
+	return v
+}
+
+func (f *pauseFixture) mustPause(ids ...int64) int {
+	f.t.Helper()
+	n, err := f.s.PauseProblems(f.ctx, ids)
+	if err != nil {
+		f.t.Fatalf("PauseProblems: unexpected err: %v", err)
+	}
+	return n
+}
+
+func (f *pauseFixture) mustUnpause(target int, ids ...int64) int {
+	f.t.Helper()
+	n, err := f.s.UnpauseProblems(f.ctx, ids, target)
+	if err != nil {
+		f.t.Fatalf("UnpauseProblems: unexpected err: %v", err)
+	}
+	return n
+}
+
+func TestPauseProblems_PausesAndCountsOnlyNewlyPaused(t *testing.T) {
+	f := newPauseFixture(t)
+	a := f.add("A", "a", DifficultyEasy, "2026-01-11")
+	b := f.add("B", "b", DifficultyEasy, "2026-01-11")
+	c := f.add("C", "c", DifficultyEasy, "2026-01-11")
+
+	if n := f.mustPause(a, b); n != 2 {
+		t.Errorf("first pause = %d, want 2", n)
+	}
+	// b is already paused, c is new, 999999 doesn't exist, a is duplicated.
+	if n := f.mustPause(b, c, 999999, a, a); n != 1 {
+		t.Errorf("mixed pause = %d, want 1 (only c is newly paused)", n)
+	}
+	for _, id := range []int64{a, b, c} {
+		if f.pausedAt(id) == nil {
+			t.Errorf("problem %d not paused", id)
+		}
+	}
+}
+
+func TestPauseProblems_EmptySelectionIsNoOp(t *testing.T) {
+	f := newPauseFixture(t)
+	f.add("A", "a", DifficultyEasy, "2026-01-11")
+
+	n, err := f.s.PauseProblems(f.ctx, nil)
+	if err != nil || n != 0 {
+		t.Errorf("PauseProblems(nil) = (%d, %v), want (0, nil)", n, err)
+	}
+	n, err = f.s.UnpauseProblems(f.ctx, []int64{}, 5)
+	if err != nil || n != 0 {
+		t.Errorf("UnpauseProblems(empty) = (%d, %v), want (0, nil)", n, err)
+	}
+}
+
+func TestPauseProblems_RepausingKeepsOriginalTimestamp(t *testing.T) {
+	f := newPauseFixture(t)
+	id := f.add("A", "a", DifficultyEasy, "2026-01-11")
+
+	f.mustPause(id)
+	first := *f.pausedAt(id)
+
+	fixedClock(f.s, time.Date(2026, 3, 1, 9, 0, 0, 0, time.UTC))
+	if n := f.mustPause(id); n != 0 {
+		t.Errorf("re-pause counted %d, want 0", n)
+	}
+	if got := *f.pausedAt(id); got != first {
+		t.Errorf("paused_at changed on re-pause: %q -> %q", first, got)
+	}
+}
+
+func TestUnpauseProblems_ActiveProblemIsUntouched(t *testing.T) {
+	f := newPauseFixture(t)
+	active := f.add("Active", "active", DifficultyEasy, "2026-02-20")
+
+	if n := f.mustUnpause(5, active); n != 0 {
+		t.Errorf("unpausing an active problem counted %d, want 0", n)
+	}
+	if got := f.nextReview(active); got != "2026-02-20" {
+		t.Errorf("active problem's next_review_date = %q, want unchanged 2026-02-20", got)
+	}
+}
+
+func TestUnpauseProblems_MixedSelectionOnlyTouchesPaused(t *testing.T) {
+	f := newPauseFixture(t)
+	active := f.add("Active", "active", DifficultyEasy, "2026-02-20")
+	paused := f.add("Paused", "paused", DifficultyEasy, "2026-01-05")
+	f.mustPause(paused)
+
+	if n := f.mustUnpause(5, active, paused); n != 1 {
+		t.Errorf("unpaused = %d, want 1", n)
+	}
+	if got := f.nextReview(active); got != "2026-02-20" {
+		t.Errorf("active problem's date changed to %q", got)
+	}
+	if f.pausedAt(paused) != nil {
+		t.Error("paused problem is still paused")
+	}
+}
+
+// dateCounts unpauses n problems (all overdue, distinct dates so the
+// order is deterministic) and returns how many landed on each date.
+func dateCountsAfterUnpause(t *testing.T, n, target int) map[string]int {
+	t.Helper()
+	f := newPauseFixture(t)
+	var ids []int64
+	for i := 0; i < n; i++ {
+		date := time.Date(2025, 12, 1, 0, 0, 0, 0, time.UTC).AddDate(0, 0, i).Format("2006-01-02")
+		ids = append(ids, f.add(fmt.Sprintf("P%02d", i), fmt.Sprintf("p%02d", i), DifficultyEasy, date))
+	}
+	f.mustPause(ids...)
+	if got := f.mustUnpause(target, ids...); got != n {
+		t.Fatalf("unpaused = %d, want %d", got, n)
+	}
+	counts := map[string]int{}
+	for _, id := range ids {
+		counts[f.nextReview(id)]++
+	}
+	return counts
+}
+
+func TestUnpauseProblems_StaggersByTarget(t *testing.T) {
+	// "today" is 2026-01-10, so the first slot is 2026-01-11.
+	cases := []struct {
+		name      string
+		n, target int
+		want      map[string]int
+	}{
+		{"20 at 5/day -> five on each of +1..+4", 20, 5,
+			map[string]int{"2026-01-11": 5, "2026-01-12": 5, "2026-01-13": 5, "2026-01-14": 5}},
+		{"3 at 5/day -> all tomorrow (no 14-day floor)", 3, 5,
+			map[string]int{"2026-01-11": 3}},
+		{"7 at 5/day -> window 2: four then three", 7, 5,
+			map[string]int{"2026-01-11": 4, "2026-01-12": 3}},
+		{"zero target falls back to the default of 5", 20, 0,
+			map[string]int{"2026-01-11": 5, "2026-01-12": 5, "2026-01-13": 5, "2026-01-14": 5}},
+		{"negative target falls back to the default of 5", 10, -3,
+			map[string]int{"2026-01-11": 5, "2026-01-12": 5}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := dateCountsAfterUnpause(t, c.n, c.target)
+			if !reflect.DeepEqual(got, c.want) {
+				t.Errorf("dates = %v, want %v", got, c.want)
+			}
+		})
+	}
+}
+
+func TestUnpauseProblems_MostOverdueComesBackFirst(t *testing.T) {
+	f := newPauseFixture(t)
+	older := f.add("Older", "older", DifficultyEasy, "2025-11-01")
+	newer := f.add("Newer", "newer", DifficultyEasy, "2025-12-15")
+	f.mustPause(older, newer)
+
+	// Pass them in the "wrong" order; the service must sort by overdue-ness.
+	f.mustUnpause(1, newer, older)
+
+	if got := f.nextReview(older); got != "2026-01-11" {
+		t.Errorf("older = %q, want 2026-01-11 (+1)", got)
+	}
+	if got := f.nextReview(newer); got != "2026-01-12" {
+		t.Errorf("newer = %q, want 2026-01-12 (+2)", got)
+	}
+}
+
+// TestUnpauseProblems_NeverPullsAReviewEarlier: a short pause must not
+// bring a review forward — grading early inflates ease on a false signal.
+func TestUnpauseProblems_NeverPullsAReviewEarlier(t *testing.T) {
+	f := newPauseFixture(t)
+	farFuture := f.add("Short pause", "short-pause", DifficultyEasy, "2026-02-09") // 30 days out
+	longAgo := f.add("Long pause", "long-pause", DifficultyEasy, "2026-01-05")     // 5 days overdue
+	f.mustPause(farFuture, longAgo)
+
+	f.mustUnpause(5, farFuture, longAgo)
+
+	if got := f.nextReview(farFuture); got != "2026-02-09" {
+		t.Errorf("short pause: next_review_date = %q, want original 2026-02-09 kept", got)
+	}
+	if got := f.nextReview(longAgo); got != "2026-01-11" {
+		t.Errorf("long pause: next_review_date = %q, want slot 2026-01-11", got)
+	}
+}
+
+func TestUnpauseProblems_KeepsSchedulerState(t *testing.T) {
+	f := newPauseFixture(t)
+	id := f.add("A", "a", DifficultyEasy, "2026-01-05")
+	if _, err := f.s.db.ExecContext(f.ctx,
+		`UPDATE review_state SET ease_factor = 1.85, interval_days = 27, repetitions = 4, last_grade = 'Hard' WHERE problem_id = ?`, id); err != nil {
+		t.Fatalf("seed state: %v", err)
+	}
+	f.mustPause(id)
+	f.mustUnpause(5, id)
+
+	var ease float64
+	var interval, reps int
+	var grade string
+	if err := f.s.db.QueryRowContext(f.ctx,
+		`SELECT ease_factor, interval_days, repetitions, last_grade FROM review_state WHERE problem_id = ?`, id).
+		Scan(&ease, &interval, &reps, &grade); err != nil {
+		t.Fatalf("read state: %v", err)
+	}
+	if !almostEqual(ease, 1.85) || interval != 27 || reps != 4 || grade != "Hard" {
+		t.Errorf("state = (ease %v, interval %d, reps %d, grade %s), want (1.85, 27, 4, Hard) unchanged", ease, interval, reps, grade)
+	}
+}
+
+// --- grading and re-adding never change pause state ---
+
+func TestRecordReview_OnPausedProblemLogsGradeButStaysPaused(t *testing.T) {
+	f := newPauseFixture(t)
+	id := f.add("A", "a", DifficultyEasy, "2026-01-05")
+	f.mustPause(id)
+	before := *f.pausedAt(id)
+
+	if _, err := f.s.RecordReview(f.ctx, id, scheduler.Good, f.s.Now()); err != nil {
+		t.Fatalf("RecordReview: unexpected err: %v", err)
+	}
+
+	after := f.pausedAt(id)
+	if after == nil || *after != before {
+		t.Errorf("paused_at = %v after grading, want unchanged %q", after, before)
+	}
+	var attempts int
+	if err := f.s.db.QueryRowContext(f.ctx, `SELECT COUNT(*) FROM attempts WHERE problem_id = ?`, id).Scan(&attempts); err != nil {
+		t.Fatalf("count attempts: %v", err)
+	}
+	if attempts != 2 {
+		t.Errorf("attempts = %d, want 2 (the grade is still logged)", attempts)
+	}
+	if got := f.nextReview(id); got == "2026-01-05" {
+		t.Error("next_review_date was not updated by the grade")
+	}
+}
+
+func TestAddProblem_ExistingPausedSlugStaysPausedAndIsNotDuplicated(t *testing.T) {
+	f := newPauseFixture(t)
+	id := f.add("A", "a", DifficultyEasy, "2026-01-05")
+	f.mustPause(id)
+
+	res, err := f.s.AddProblem(f.ctx, AddProblemInput{
+		Title: "A again", URL: "https://leetcode.com/problems/a/", Difficulty: DifficultyEasy,
+		Grade: scheduler.Easy, At: f.s.Now(),
+	})
+	if err != nil {
+		t.Fatalf("AddProblem: unexpected err: %v", err)
+	}
+	if res.Created || res.ID != id {
+		t.Errorf("result = %+v, want the existing problem %d, not a new one", res, id)
+	}
+	if f.pausedAt(id) == nil {
+		t.Error("re-adding a paused problem unpaused it")
+	}
+	if n, _ := f.s.CountProblems(f.ctx); n != 1 {
+		t.Errorf("problem count = %d, want 1 (no duplicate)", n)
+	}
+}
+
+func TestBulkImport_RefreshingAPausedProblemLeavesItPaused(t *testing.T) {
+	f := newPauseFixture(t)
+	id := f.add("A", "a", DifficultyEasy, "2026-01-05")
+	f.mustPause(id)
+
+	res, err := f.s.BulkImportProblems(f.ctx, []BulkImportRow{
+		{Title: "A", URL: "https://leetcode.com/problems/a/", Difficulty: DifficultyEasy},
+	}, 5)
+	if err != nil {
+		t.Fatalf("BulkImportProblems: unexpected err: %v", err)
+	}
+	if res.Merged != 1 {
+		t.Fatalf("result = %+v, want the row merged into the existing problem", res)
+	}
+	if f.pausedAt(id) == nil {
+		t.Error("bulk import refresh unpaused the problem")
 	}
 }

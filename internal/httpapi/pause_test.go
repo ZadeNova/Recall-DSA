@@ -597,3 +597,65 @@ func TestLibrary_FilterFormCarriesPageSize(t *testing.T) {
 		}
 	}
 }
+
+// With a topic filter, the empty-queue note must count only paused
+// problems in that topic, not every paused problem.
+func TestDue_PausedNoteIsScopedToTheTopicFilter(t *testing.T) {
+	h, svc := pauseTestServer(t)
+	add := func(title, slug, topic string) int64 {
+		t.Helper()
+		res, err := svc.AddProblem(t.Context(), service.AddProblemInput{
+			Title: title, URL: slug, Difficulty: service.DifficultyEasy, Topics: []string{topic}, Grade: "Good", At: svc.Now(),
+		})
+		if err != nil {
+			t.Fatalf("AddProblem: %v", err)
+		}
+		return res.ID
+	}
+	g := add("Graph One", "graph-one", "Graphs")
+	s1 := add("Stack One", "stack-one", "Stack")
+	s2 := add("Stack Two", "stack-two", "Stack")
+	if _, err := svc.PauseProblems(t.Context(), []int64{g, s1, s2}); err != nil {
+		t.Fatalf("PauseProblems: %v", err)
+	}
+
+	cases := []struct{ query, want, notWant string }{
+		{"", "3 problems currently paused", ""},
+		{"?topic=Graphs", "1 problem currently paused", "3 problems"},
+		{"?topic=Stack", "2 problems currently paused", "3 problems"},
+		{"?topic=Trees", "", "currently paused"},
+	}
+	for _, c := range cases {
+		body := doGet(t, h, "/due"+c.query).Body.String()
+		if c.want != "" && !strings.Contains(body, c.want) {
+			t.Errorf("/due%s: want %q in the empty-queue note", c.query, c.want)
+		}
+		if c.notWant != "" && strings.Contains(body, c.notWant) {
+			t.Errorf("/due%s: note should not contain %q", c.query, c.notWant)
+		}
+	}
+}
+
+func TestBulkStatus_RejectsTooManyIDs(t *testing.T) {
+	h, svc := pauseTestServer(t)
+	a := addSeedProblem(t, svc, "A", "a")
+
+	form := url.Values{"action": {"pause"}}
+	for i := 0; i <= maxBulkIDs; i++ {
+		form.Add("id", strconv.Itoa(i+1000))
+	}
+	rec := doForm(t, h, http.MethodPost, "/problems/bulk-status", form)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d for %d ids, want 400", rec.Code, maxBulkIDs+1)
+	}
+
+	// Exactly the limit is accepted.
+	form = url.Values{"action": {"pause"}}
+	form.Add("id", strconv.FormatInt(a, 10))
+	for i := 1; i < maxBulkIDs; i++ {
+		form.Add("id", strconv.Itoa(i+1000))
+	}
+	if rec := doForm(t, h, http.MethodPost, "/problems/bulk-status", form); rec.Code != http.StatusSeeOther {
+		t.Errorf("status = %d for exactly %d ids, want 303", rec.Code, maxBulkIDs)
+	}
+}

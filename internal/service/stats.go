@@ -138,12 +138,16 @@ func (s *Service) UpcomingByDay(ctx context.Context, days int) ([]DayCount, erro
 	return result, nil
 }
 
-// CountPaused is how many problems are currently paused out of rotation —
-// the "Paused: N" stat. Deliberately separate from CountProblems, which
-// stays "everything ever logged" regardless of pause state.
-func (s *Service) CountPaused(ctx context.Context) (int, error) {
+// CountPaused is how many problems are currently paused out of rotation,
+// optionally within one topic (so the Due page's topic-filtered empty
+// state doesn't report paused problems from other topics). Deliberately
+// separate from CountProblems, which stays "everything ever logged"
+// regardless of pause state.
+func (s *Service) CountPaused(ctx context.Context, topic *string) (int, error) {
+	from := `FROM review_state rs JOIN problems p ON p.id = rs.problem_id`
+	from, args := appendTopicJoin(from, nil, topic)
 	var count int
-	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM review_state WHERE paused_at IS NOT NULL`).Scan(&count); err != nil {
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) `+from+` WHERE rs.paused_at IS NOT NULL`, args...).Scan(&count); err != nil {
 		return 0, fmt.Errorf("service: count paused: %w", err)
 	}
 	return count, nil

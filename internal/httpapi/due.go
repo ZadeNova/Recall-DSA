@@ -126,7 +126,7 @@ func (s *Server) handleHome(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	pausedCount, err := s.svc.CountPaused(ctx)
+	pausedCount, err := s.svc.CountPaused(ctx, nil)
 	if err != nil {
 		s.renderError(w, r, http.StatusInternalServerError, err)
 		return
@@ -216,7 +216,8 @@ func (s *Server) handleDue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	pausedCount, err := s.svc.CountPaused(ctx)
+	// Scoped to the topic filter, like the list it annotates.
+	pausedCount, err := s.svc.CountPaused(ctx, topic)
 	if err != nil {
 		s.renderError(w, r, http.StatusInternalServerError, err)
 		return

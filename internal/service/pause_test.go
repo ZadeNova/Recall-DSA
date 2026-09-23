@@ -217,7 +217,7 @@ func TestListLibrary_PausedRowsSortLastUnderEverySort(t *testing.T) {
 func TestCountPaused(t *testing.T) {
 	f := newPauseFixture(t)
 
-	if n, err := f.s.CountPaused(f.ctx); err != nil || n != 0 {
+	if n, err := f.s.CountPaused(f.ctx, nil); err != nil || n != 0 {
 		t.Fatalf("CountPaused on empty library = (%d, %v), want (0, nil)", n, err)
 	}
 
@@ -225,7 +225,7 @@ func TestCountPaused(t *testing.T) {
 	f.pause(f.add("Paused A", "paused-a", DifficultyEasy, "2026-01-12"))
 	f.pause(f.add("Paused B", "paused-b", DifficultyEasy, "2026-01-13"))
 
-	n, err := f.s.CountPaused(f.ctx)
+	n, err := f.s.CountPaused(f.ctx, nil)
 	if err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
@@ -548,5 +548,27 @@ func TestAddProblem_PausedFlagIsFalseForNewAndActiveProblems(t *testing.T) {
 	if err != nil || readded.Created || readded.Paused {
 		t.Fatalf("re-add of active problem: (Created=%v, Paused=%v, err=%v), want Created=false Paused=false",
 			readded.Created, readded.Paused, err)
+	}
+}
+
+func TestCountPaused_ScopedToTopic(t *testing.T) {
+	f := newPauseFixture(t)
+	f.pause(f.add("Graph A", "graph-a", DifficultyEasy, "2026-01-11", "Graphs"))
+	f.pause(f.add("Stack A", "stack-a", DifficultyEasy, "2026-01-11", "Stack"))
+	f.pause(f.add("Stack B", "stack-b", DifficultyEasy, "2026-01-11", "Stack"))
+	f.add("Stack Active", "stack-active", DifficultyEasy, "2026-01-11", "Stack")
+
+	graphs, stack, trees := "Graphs", "Stack", "Trees"
+	for _, c := range []struct {
+		topic *string
+		want  int
+	}{{nil, 3}, {&graphs, 1}, {&stack, 2}, {&trees, 0}} {
+		n, err := f.s.CountPaused(f.ctx, c.topic)
+		if err != nil {
+			t.Fatalf("CountPaused: unexpected err: %v", err)
+		}
+		if n != c.want {
+			t.Errorf("CountPaused(%v) = %d, want %d", c.topic, n, c.want)
+		}
 	}
 }

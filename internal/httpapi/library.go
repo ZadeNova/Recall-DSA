@@ -156,7 +156,7 @@ func (s *Server) handleLibrary(w http.ResponseWriter, r *http.Request) {
 	}
 	data.TotalTracked = total
 
-	if data.PausedCount, err = s.svc.CountPaused(ctx); err != nil {
+	if data.PausedCount, err = s.svc.CountPaused(ctx, nil); err != nil {
 		s.renderError(w, r, http.StatusInternalServerError, err)
 		return
 	}
@@ -234,6 +234,11 @@ func daysBetween(a, b time.Time) int {
 // into an open redirect or inject extra params.
 var libraryReturnParams = []string{"q", "topic", "difficulty", "sort", "status", "page", "page_size"}
 
+// maxBulkIDs caps one bulk request. The UI can only select one page (at
+// most 50 rows), so this only stops a hand-crafted POST from exceeding
+// SQLite's bound-parameter limit and failing with a 500.
+const maxBulkIDs = 500
+
 // handleBulkStatus pauses or unpauses the ticked Library rows, then
 // redirects (post/redirect/get) back to the same filtered view with the
 // outcome in ?done=&n= for handleLibrary to turn into a notice.
@@ -249,6 +254,10 @@ func (s *Server) handleBulkStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if n := len(r.PostForm["id"]); n > maxBulkIDs {
+		s.renderError(w, r, http.StatusBadRequest, fmt.Errorf("too many problems selected (%d, max %d)", n, maxBulkIDs))
+		return
+	}
 	var ids []int64
 	for _, raw := range r.PostForm["id"] {
 		id, err := strconv.ParseInt(raw, 10, 64)

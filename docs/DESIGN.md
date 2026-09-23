@@ -135,11 +135,13 @@ No formal scale — ad hoc `rem`. Recurring values:
 **Buttons**
 - Primary (`button`, `a.btn-link`): `--link` fill, `--color-base` text, no border, 4px radius, 500.
 - Danger (`button.btn-danger`): `--danger` fill.
-- Secondary (`a.btn-secondary`): transparent, `--text`, 1px `--border`; hover `--surface-bg` fill.
+- Secondary (`a.btn-secondary`, `button.btn-secondary`): transparent, `--text`, 1px `--border`; hover `--surface-bg` fill (no brightness change).
 - Grade (`.grade-btn-failed|hard|good|easy`): small solid fill of the matching `--grade-*` token; each is its own inline `<form class="grade-form">`.
 - Every plain `<button>` gets primary styling with no class; more specific classes override.
 
-**Form controls** — `input[type=text]`, `select`: 1px `--border`, 4px radius, `--surface-bg` fill, `--text`. Native `select`/`checkbox`/`radio` behavior otherwise. `.input-small` = `6rem` wide. `.import-textarea` = mono 13, vertical resize. Field label row: `.field-header` (label left, `.field-hint` right, baseline-aligned).
+**Form controls** — `input[type=text]`, `input[type=number]`, `select`: 1px `--border`, 4px radius, `--surface-bg` fill, `--text`. Native `select`/`checkbox`/`radio` behavior otherwise. `.input-small` = `6rem` wide. `.import-textarea` = mono 13, vertical resize. Field label row: `.field-header` (label left, `.field-hint` right, baseline-aligned).
+
+**Bulk actions (Library)** — `.bulk-bar` (flex, wrap, gaps `0.5rem 0.75rem`, `margin-top: 1rem`) above the table: a `.meta` "N selected" count, a primary **Pause selected** button, and `.bulk-unpause` (inline flex) holding the secondary **Unpause selected** button, a 12/500 `--muted-text` label and an `.input-small` number input. The table's first column is `th.check`/`td.check` (`2.2rem`, no right padding) holding the row and select-all checkboxes. `.badge-paused` is a `.topic-tag`-shaped badge (4px radius, `--tag-bg` fill, 12/500) in `--muted-text`. Paused/selected row states are in §7.
 
 **Cards** — `.stat-card` (meta label + `.stat-number`), `.sidebar-card`, `.section-card`, `.muted-section`, `.quote-card` (italic, muted). See §5.
 
@@ -151,7 +153,7 @@ No formal scale — ad hoc `rem`. Recurring values:
 - `.difficulty-pill` (Easy/Medium/Hard): bordered, equal-width; checked → solid `--difficulty-*` fill and border, `--color-base` text.
 - `.grade-card` (Failed/Hard/Good/Easy): name / interval / description; checked → solid `--grade-*` fill and border, all inner text `--color-base`.
 
-**Difficulty & status text** — `.difficulty-Easy|Medium|Hard` color the text 12/500. `.status-overdue` (`--danger`, 500), `.status-due-today` (`--link`, 500), `.status-upcoming` (`--muted-text`). Import row status: `.import-status-new|merge|protected|error` (text / muted / link / danger).
+**Difficulty & status text** — `.difficulty-Easy|Medium|Hard` color the text 12/500. `.status-paused` (`--muted-text`, 13/500) is the Next Review text for a paused problem. `.status-overdue` (`--danger`, 500), `.status-due-today` (`--link`, 500), `.status-upcoming` (`--muted-text`). Import row status: `.import-status-new|merge|protected|error` (text / muted / link / danger).
 
 **Progress bars** — `.topic-count-bar` (6px tall, 3px radius, `--border` track, min-width 80px) with `.topic-count-bar-fill` (`--tag-accent`); width set inline as a Go-computed percentage.
 
@@ -174,6 +176,8 @@ No formal scale — ad hoc `rem`. Recurring values:
 | Hover (theme-switcher tab) | `--bg` background |
 | Active nav / theme | Nav: `--tag-bg` + `--link`. Switcher: `--bg` + `--text` + 600 |
 | Selected (pill/card/chip) | Solid fill of its semantic color, `--color-base` text |
+| Selected table row (`.row-selected`) | `--tag-bg` background on its cells (rows are not pills, so no solid fill) |
+| Paused table row (`.row-paused`) | `--surface-bg` background, `--muted-text` title, `.badge-paused`; no opacity |
 | Keyboard focus, custom controls | `:has(input:focus-visible)` on `.topic-chip`, `.difficulty-pill`, `.grade-card` → `outline: 2px solid var(--link); outline-offset: 2px` |
 | Keyboard focus, everything else | Browser default (no custom rule) |
 | Pressed / disabled | Not styled (no `:active`, `:disabled`) |

@@ -8,8 +8,8 @@ Features discussed after v1 was built, tracked here rather than in SPEC.md to ke
 
 | Feature | Status |
 |---|---|
-| Pause/archive (bulk, via Library) | Design settled — **next to build** |
-| Unpause behavior (staggered) | Design settled — builds with pause |
+| Pause/archive (bulk, via Library) | **Built** on `feature/pause-unpause`; pending final check against real data and merge |
+| Unpause behavior (staggered) | **Built** with pause |
 | Collections (NC150, Blind 75, ...) | Design settled — build **after** pause/unpause ships and is reviewed |
 | Stuck/leech signal | Reserved for later |
 | Daily review cap with rollover | Deferred |
@@ -18,7 +18,7 @@ Features discussed after v1 was built, tracked here rather than in SPEC.md to ke
 
 ---
 
-## 1. Pause/archive a problem out of active rotation — next to build
+## 1. Pause/archive a problem out of active rotation — built
 
 Removes a problem from the review pool while keeping its `attempts` history intact. Not gated on grade history: valid for "clearly mastered, doesn't need indefinite review" or "not worth reviewing forever regardless of mastery" (e.g. an obscure pattern unlikely to come up in an interview). Also the resolution path for the stuck/leech signal (§4). Which problems qualify is always a manual judgment call. The tool inferring it would be the same automation SPEC.md §13 rejects for curriculum guidance, aimed at curation instead of recommendation.
 
@@ -54,7 +54,7 @@ Removes a problem from the review pool while keeping its `attempts` history inta
 - **Selection is per page:** no cross-page selection memory (that needs fragile JS state). At page size 50, 206 problems is 5 pages.
 - **One table with a status filter** (All / Active / Paused, default **Active**) next to the existing topic/difficulty/sort filters. Two separately-paginated tables was considered and rejected: an extra query and render on every visit for what's meant to be an occasional view.
 - **After a bulk action the page reloads (option B, decided).** Under the default Active filter, freshly paused rows disappear, which is what a filter should do. They show under All/Paused. This replaces the earlier "rows never disappear on pause" decision: the in-place htmx swap that would have kept that promise was judged more complex and bug-prone than it's worth.
-- **Paused rows under All:** muted styling plus a "Paused" badge, and the Next Review column shows "Paused" rather than a stale overdue date.
+- **Paused rows under All:** muted styling plus a "Paused" badge, and the Next Review column shows "Paused since <date>" rather than a stale overdue date. (UX details are recorded in FRONTEND.md #33.)
 - **Stats:** Library and Home gain a **Paused: N** count. "Total Tracked" is unaffected (solve history, not rotation membership).
 
 ### Verified non-collisions
@@ -80,7 +80,7 @@ Items marked **confirm** need a decision before building; the rest are the plann
 
 ---
 
-## 2. Unpause behavior — builds with pause
+## 2. Unpause behavior — built
 
 - Keep `ease_factor` / `repetitions` / `interval_days` as they were (no lost progress).
 - Set `next_review_date` a short way out, not "resume exactly where it left off". Resuming as-is would dump a heavily overdue backlog, and elapsed pause time doesn't map to anything SM-2 models.

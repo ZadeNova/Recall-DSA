@@ -66,5 +66,5 @@ See SPEC.md §13 for the full list. If asked to add anything on it (Postgres, lo
 - Build: `go build ./...`
 - Run: `go run ./cmd/server` (flags: `-db`, `-addr`, `-tz` — see `cmd/server/main.go`)
 - Test: `go test ./...`
-- Migrate: none — `internal/db/schema.sql` is idempotent DDL, applied on every startup; seed data is gated separately (see `internal/db/db.go`'s `seedTopicsIfEmpty`)
+- Migrate: `internal/db/schema.sql` is idempotent DDL, applied on every startup. Adding a column to an existing table is the exception, since `CREATE TABLE IF NOT EXISTS` can't do it: `internal/db/db.go`'s `ensurePausedAtColumn` is the one guarded `ALTER TABLE` (nothing else in `schema.sql` may reference that column, because the schema runs before it). Seed data is gated separately (see `seedTopicsIfEmpty`).
 - Deploy: see `docs/DEPLOY.md` (Docker + Tailscale, SPEC.md §10)

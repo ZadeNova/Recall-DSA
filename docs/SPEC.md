@@ -37,7 +37,8 @@ attempts                          -- append-only audit log
 
 review_state                      -- one row per problem, once solved once
   problem_id, ease_factor, interval_days, repetitions,
-  next_review_date, last_grade, last_reviewed_at
+  next_review_date, last_grade, last_reviewed_at,
+  paused_at                       -- NULL = active; set = out of rotation (docs/NEW_FEATURES.md §1)
 
 topics
   id, name UNIQUE COLLATE NOCASE
@@ -60,7 +61,7 @@ Notes:
 ## 4. Scheduling logic
 
 ```
-Return review_state rows where next_review_date <= today,
+Return review_state rows where next_review_date <= today and the problem is not paused,
 most overdue first, optionally filtered to a single topic.
 ```
 

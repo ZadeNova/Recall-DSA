@@ -1,5 +1,7 @@
 # Implementation Plan — Pause/Archive + Unpause
 
+**Status: Steps 1-7 are done on `feature/pause-unpause`. Remaining: the Verification section against a copy of the real database, then merge to `main`.**
+
 Implements `NEW_FEATURES.md` §1–§2. Design, decisions and edge cases live there; this file is only the build order. Delete it (or mark it done) once shipped.
 
 **Out of scope:** collections, stuck signal, daily cap, settings page.

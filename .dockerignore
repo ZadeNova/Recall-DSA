@@ -5,3 +5,4 @@ recall.db
 recall.db-shm
 recall.db-wal
 *.md
+docs

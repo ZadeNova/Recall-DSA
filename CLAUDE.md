@@ -4,9 +4,11 @@
 
 Personal spaced-repetition tool for LeetCode/NeetCode 150 practice. Tracks every problem solved and surfaces what's overdue for review, using SM-2. It does **not** decide what new problem to solve next — that's a manual decision made outside the tool.
 
-**Full design spec: `SPEC.md` in repo root.** This project has already been through extensive design iteration — read it before making any architectural decision. Most "obvious" alternatives (Postgres, a TUI, curriculum auto-guidance, FSRS, auth/multi-tenancy) were considered and deliberately rejected; see SPEC.md §13 before reintroducing any of them.
+**Full design spec: `docs/SPEC.md`.** This project has already been through extensive design iteration — read it before making any architectural decision. Most "obvious" alternatives (Postgres, a TUI, curriculum auto-guidance, FSRS, auth/multi-tenancy) were considered and deliberately rejected; see SPEC.md §13 before reintroducing any of them.
 
-**Frontend design spec: `FRONTEND.md` in repo root.** Colors, typography, page-by-page UX decisions, open UX questions, and frontend-specific implementation conventions live there, not here. Read it before making any visual or UX change, and record new frontend decisions there rather than only in chat.
+**Frontend design spec: `docs/FRONTEND.md`.** Colors, typography, page-by-page UX decisions, open UX questions, and frontend-specific implementation conventions live there, not here. Read it before making any visual or UX change, and record new frontend decisions there rather than only in chat.
+
+**Post-v1 features: `docs/NEW_FEATURES.md`.** Designs, decisions and edge cases for features added after v1 (pause/archive, collections, etc.). Read it before working on any of them.
 
 ## Stack
 
@@ -47,6 +49,14 @@ This is the one correctness-critical piece of the project. Full rules and a work
 - Run `gofmt`, `go vet ./...`, and `go test ./...` before considering work complete.
 - Before implementing non-trivial code, briefly explain the design and important trade-offs so the developer can understand and review the implementation.
 
+## Git workflow
+
+- Build every feature or non-trivial change on its own branch (e.g. `feature/pause-unpause`), never directly on `main`.
+- Merge to `main` only once the work is complete and tested: `gofmt -l .`, `go vet ./...` and `go test ./...` are clean and the feature has been checked in the running app.
+- Every push to `main` auto-deploys to the Pi (`.github/workflows/deploy.yml`), so `main` must always be deployable. A half-finished feature on `main` ships.
+- Keep commits small and focused (one logical step each) with messages that explain why, not just what.
+- Small docs-only changes may go straight to `main`.
+
 ## Explicitly out of scope
 
 See SPEC.md §13 for the full list. If asked to add anything on it (Postgres, login, a TUI, live LeetCode API calls, curriculum-guidance/auto-recommend-next-problem), flag it rather than implementing it silently — these were removed on purpose, not overlooked.
@@ -57,4 +67,4 @@ See SPEC.md §13 for the full list. If asked to add anything on it (Postgres, lo
 - Run: `go run ./cmd/server` (flags: `-db`, `-addr`, `-tz` — see `cmd/server/main.go`)
 - Test: `go test ./...`
 - Migrate: none — `internal/db/schema.sql` is idempotent DDL, applied on every startup; seed data is gated separately (see `internal/db/db.go`'s `seedTopicsIfEmpty`)
-- Deploy: see `DEPLOY.md` (Docker + Tailscale, SPEC.md §10)
+- Deploy: see `docs/DEPLOY.md` (Docker + Tailscale, SPEC.md §10)

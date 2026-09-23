@@ -15,7 +15,7 @@ This is the living reference for frontend/UI/UX decisions: visual identity (colo
 ## Current build status
 
 - **Step 4 (HTTP handlers)** — complete: the full workflow (dashboard, due queue, grading, add/edit/delete problems, library, topics) is built.
-- **Step 5 (htmx templates/UI)** — visual identity, theming, htmx grading, and a full mockup-driven pass over Home/Due/Topics/Add Problem/Library are all built (see "Decided UX facts"). Bulk Import remains deliberately deferred (SPEC.md §9, CLAUDE.md build-order step 6).
+- **Step 5 (htmx templates/UI)** — visual identity, theming, htmx grading, and a full mockup-driven pass over Home/Due/Topics/Add Problem/Library/Bulk Import are all built (see "Decided UX facts").
 
 ## Visual identity
 
@@ -81,7 +81,7 @@ This is the living reference for frontend/UI/UX decisions: visual identity (colo
 | Library | `GET /library` | Search/sort/filter/paginate all logged problems, with SRS interval + status | Built |
 | Topics | `GET /topics` + create/rename/delete | Topic CRUD, per-topic counts, distribution | Built |
 | Error page | (shared, not a route) | 400/404/500 — status, underlying error text, link home | Built |
-| Bulk Import | — | CSV/paste seeding, baseline Hard grade, staggered dates (SPEC.md §9) | Not built — deliberately deferred to CLAUDE.md build-order step 6 |
+| Bulk Import | `GET /problems/import`, `POST .../preview`, `POST .../commit` | CSV/paste seeding, baseline Hard grade, staggered dates (SPEC.md §9), two-step Preview/Commit | Built |
 
 ## Frontend implementation conventions
 

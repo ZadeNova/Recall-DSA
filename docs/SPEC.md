@@ -1,4 +1,6 @@
-# DSA Spaced Repetition Tool — Spec (v8)
+# DSA Spaced Repetition Tool — Spec (v9)
+
+Supersedes v8. §14 added: a pointer to `NEW_FEATURES.md`, which holds post-v1 feature designs (pause/archive, staggered unpause, stuck/leech signal, daily review cap; interval jitter dropped).
 
 Supersedes v7. §3: `attempts` now stores the full grade (Failed/Hard/Good/Easy) instead of a collapsed solved/failed flag, so grade history survives `review_state` being overwritten on re-grade. §5: rounding rule specified (round-half-up, once, after the Hard rule and 45-day cap); Failed clarified as an unconditional reset rather than a 0→1 transition. §10: WAL mode + busy_timeout pragma, and a cron-based SQLite backup to a private GitHub repo.
 
@@ -203,3 +205,7 @@ From User: I will answer/deal with this after this project has been completed an
 - Offline support / sync beyond the hosted model in §10
 - LeetCode API as a live runtime dependency beyond the optional add-problem lookup in §9, or automatic submission tracking
 - Push notifications by default (user self-initiates sessions)
+
+## 14. New features (post-v1)
+
+Features discussed after v1 was built — pause/archive with bulk multi-select, staggered unpause, a stuck/leech signal, a daily review cap, and dropped ideas — live in **`NEW_FEATURES.md`**, including their status and design decisions. Read it before implementing any of them.

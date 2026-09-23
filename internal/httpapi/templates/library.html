@@ -23,6 +23,7 @@
 </div>
 
 <form method="get" action="/library" class="library-toolbar">
+  <input type="hidden" name="page_size" value="{{.Page.PageSize}}">
   <input type="text" id="library-search" name="q" value="{{.Search}}" placeholder="Search by title... (press / to focus)">
   <select name="topic">
     <option value="">All topics</option>

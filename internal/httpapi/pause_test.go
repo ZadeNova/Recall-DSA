@@ -578,3 +578,22 @@ func TestTopicsHeaderSaysProblems(t *testing.T) {
 		t.Error("Topics header \"Problems\" missing")
 	}
 }
+
+// The Filter button submits a plain GET form. If the form doesn't carry the
+// current page size, clicking Filter silently resets it to the default.
+func TestLibrary_FilterFormCarriesPageSize(t *testing.T) {
+	h, svc := pauseTestServer(t)
+	addSeedProblem(t, svc, "Two Sum", "two-sum")
+
+	for _, size := range []string{"10", "25", "50"} {
+		body := doGet(t, h, "/library?page_size="+size).Body.String()
+		start := strings.Index(body, `<form method="get" action="/library" class="library-toolbar">`)
+		if start < 0 {
+			t.Fatal("Library has no filter toolbar form")
+		}
+		form := body[start : start+strings.Index(body[start:], "</form>")]
+		if !strings.Contains(form, `name="page_size" value="`+size+`"`) {
+			t.Errorf("page_size=%s: the Filter form drops the page size:\n%s", size, form)
+		}
+	}
+}

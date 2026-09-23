@@ -75,9 +75,7 @@ type dueViewData struct {
 type homeViewData struct {
 	DueCount      int
 	Due           glanceTableData
-	TotalTracked  int
-	PausedCount   int
-	Difficulty    service.DifficultyCounts
+	Summary       service.Summary
 	UpcomingByDay []service.DayCount
 	Quote         string
 }
@@ -120,19 +118,7 @@ func (s *Server) handleHome(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	countTotal, err := s.svc.CountProblems(ctx)
-	if err != nil {
-		s.renderError(w, r, http.StatusInternalServerError, err)
-		return
-	}
-
-	pausedCount, err := s.svc.CountPaused(ctx, nil)
-	if err != nil {
-		s.renderError(w, r, http.StatusInternalServerError, err)
-		return
-	}
-
-	difficulty, err := s.svc.DifficultyBreakdown(ctx)
+	summary, err := s.svc.Summary(ctx)
 	if err != nil {
 		s.renderError(w, r, http.StatusInternalServerError, err)
 		return
@@ -148,12 +134,10 @@ func (s *Server) handleHome(w http.ResponseWriter, r *http.Request) {
 		DueCount: total,
 		Due: glanceTableData{
 			Items:        dueItems,
-			EmptyMessage: nothingDueMessageFor(pausedCount),
+			EmptyMessage: nothingDueMessageFor(summary.Paused),
 			Page:         buildPageInfo("/", url.Values{}, "page", "page_size", page, pageSize, total),
 		},
-		TotalTracked:  countTotal,
-		PausedCount:   pausedCount,
-		Difficulty:    difficulty,
+		Summary:       summary,
 		UpcomingByDay: byDay,
 		Quote:         randomQuote(),
 	}

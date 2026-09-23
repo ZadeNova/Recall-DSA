@@ -4,22 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"strings"
 	"time"
 )
-
-// idPlaceholders returns "?,?,?" for the given ids plus the ids as query args.
-// Callers are bounded by a page's worth of selected rows (Library's max
-// page size is 50), far below SQLite's bound-variable limit.
-func idPlaceholders(ids []int64) (string, []any) {
-	marks := make([]string, len(ids))
-	args := make([]any, len(ids))
-	for i, id := range ids {
-		marks[i] = "?"
-		args[i] = id
-	}
-	return strings.Join(marks, ","), args
-}
 
 // PauseProblems takes the given problems out of active rotation
 // (NEW_FEATURES.md §1) and returns how many were newly paused.
@@ -32,7 +18,7 @@ func (s *Service) PauseProblems(ctx context.Context, ids []int64) (int, error) {
 	if len(ids) == 0 {
 		return 0, nil
 	}
-	marks, args := idPlaceholders(ids)
+	marks, args := sqlInList(ids)
 	args = append([]any{s.now().UTC().Format(time.RFC3339)}, args...)
 
 	res, err := s.db.ExecContext(ctx,
@@ -67,47 +53,18 @@ func (s *Service) UnpauseProblems(ctx context.Context, ids []int64, targetPerDay
 	if len(ids) == 0 {
 		return 0, nil
 	}
-	if targetPerDay <= 0 {
-		targetPerDay = DefaultTargetPerDay
-	}
 
-	type pausedRow struct {
-		id         int64
-		nextReview string
-	}
 	var unpaused int
-
 	err := s.withTx(ctx, func(tx *sql.Tx) error {
-		marks, args := idPlaceholders(ids)
-		rows, err := tx.QueryContext(ctx,
-			`SELECT problem_id, next_review_date FROM review_state
-			 WHERE problem_id IN (`+marks+`) AND paused_at IS NOT NULL
-			 ORDER BY next_review_date ASC, problem_id ASC`, args...)
+		paused, err := loadPausedForUnpause(ctx, tx, ids)
 		if err != nil {
-			return fmt.Errorf("service: load paused problems: %w", err)
-		}
-		// Read everything before the first UPDATE: the pool has a single
-		// connection, so the cursor must be closed first.
-		var paused []pausedRow
-		for rows.Next() {
-			var r pausedRow
-			if err := rows.Scan(&r.id, &r.nextReview); err != nil {
-				rows.Close()
-				return fmt.Errorf("service: scan paused problem: %w", err)
-			}
-			paused = append(paused, r)
-		}
-		if err := rows.Err(); err != nil {
-			rows.Close()
 			return err
 		}
-		rows.Close()
-
 		n := len(paused)
 		if n == 0 {
 			return nil
 		}
-		windowDays := (n + targetPerDay - 1) / targetPerDay // ceiling division
+		windowDays := staggerWindowDays(n, targetPerDay, 1)
 		today := s.Today()
 
 		for i, r := range paused {
@@ -130,4 +87,34 @@ func (s *Service) UnpauseProblems(ctx context.Context, ids []int64, targetPerDay
 		return 0, err
 	}
 	return unpaused, nil
+}
+
+type pausedRow struct {
+	id         int64
+	nextReview string
+}
+
+// loadPausedForUnpause reads which of ids are actually paused, most
+// overdue first. It returns a fully read slice (rows closed) so the caller
+// can run its UPDATEs on the same transaction's connection afterwards.
+func loadPausedForUnpause(ctx context.Context, tx *sql.Tx, ids []int64) ([]pausedRow, error) {
+	marks, args := sqlInList(ids)
+	rows, err := tx.QueryContext(ctx,
+		`SELECT problem_id, next_review_date FROM review_state
+		 WHERE problem_id IN (`+marks+`) AND paused_at IS NOT NULL
+		 ORDER BY next_review_date ASC, problem_id ASC`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("service: load paused problems: %w", err)
+	}
+	defer rows.Close()
+
+	var paused []pausedRow
+	for rows.Next() {
+		var r pausedRow
+		if err := rows.Scan(&r.id, &r.nextReview); err != nil {
+			return nil, fmt.Errorf("service: scan paused problem: %w", err)
+		}
+		paused = append(paused, r)
+	}
+	return paused, rows.Err()
 }

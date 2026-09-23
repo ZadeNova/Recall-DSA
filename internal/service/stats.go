@@ -152,3 +152,27 @@ func (s *Service) CountPaused(ctx context.Context, topic *string) (int, error) {
 	}
 	return count, nil
 }
+
+// Summary is the library-wide stat cards shown on Home and Library.
+type Summary struct {
+	Total      int // every problem ever logged (solve history, ignores pause state)
+	Difficulty DifficultyCounts
+	Paused     int
+}
+
+// Summary loads the stat cards Home and Library both show, so the two
+// pages can't drift apart in what they count.
+func (s *Service) Summary(ctx context.Context) (Summary, error) {
+	var sum Summary
+	var err error
+	if sum.Total, err = s.CountProblems(ctx); err != nil {
+		return Summary{}, err
+	}
+	if sum.Difficulty, err = s.DifficultyBreakdown(ctx); err != nil {
+		return Summary{}, err
+	}
+	if sum.Paused, err = s.CountPaused(ctx, nil); err != nil {
+		return Summary{}, err
+	}
+	return sum, nil
+}

@@ -62,18 +62,12 @@ func (s *Service) CheckSlugs(ctx context.Context, slugs []string) (map[string]Sl
 		return result, nil
 	}
 
-	placeholders := make([]string, len(slugs))
-	args := make([]any, len(slugs))
-	for i, slug := range slugs {
-		placeholders[i] = "?"
-		args[i] = slug
-	}
-
+	marks, args := sqlInList(slugs)
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT p.slug, COUNT(a.id)
 		FROM problems p
 		LEFT JOIN attempts a ON a.problem_id = p.id
-		WHERE p.slug IN (`+strings.Join(placeholders, ",")+`)
+		WHERE p.slug IN (`+marks+`)
 		GROUP BY p.slug`, args...)
 	if err != nil {
 		return nil, fmt.Errorf("service: batch check slugs: %w", err)
@@ -120,13 +114,17 @@ const minStaggerDays = 14
 // batch doesn't dump more reviews per day than the target regardless of
 // how many rows are in it (SPEC.md §9's "~2 weeks" was sized for a much
 // smaller batch than a full solve-history import can be).
-func staggerWindowDays(n, targetPerDay int) int {
+//
+// It is shared with UnpauseProblems so both spread problems by the same
+// rule; only the minimum window differs (minStaggerDays for import, 1 day
+// for unpause, where a small batch shouldn't be spread over two weeks).
+func staggerWindowDays(n, targetPerDay, minDays int) int {
 	if targetPerDay <= 0 {
 		targetPerDay = DefaultTargetPerDay
 	}
 	windowDays := (n + targetPerDay - 1) / targetPerDay // ceiling division
-	if windowDays < minStaggerDays {
-		windowDays = minStaggerDays
+	if windowDays < minDays {
+		windowDays = minDays
 	}
 	return windowDays
 }
@@ -156,7 +154,7 @@ func (s *Service) BulkImportProblems(ctx context.Context, rows []BulkImportRow, 
 		return result, nil
 	}
 
-	windowDays := staggerWindowDays(n, targetPerDay)
+	windowDays := staggerWindowDays(n, targetPerDay, minStaggerDays)
 	now := s.now()
 	today := s.Today()
 

@@ -9,6 +9,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"modernc.org/sqlite"
@@ -154,4 +155,18 @@ func (s *Service) today() string {
 func (s *Service) Today() time.Time {
 	now := s.now().In(s.loc)
 	return time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, s.loc)
+}
+
+// sqlInList returns "?,?,?" for vals, plus vals as query args, for a
+// `WHERE x IN (...)` clause. Every caller passes a bounded list (one page
+// of rows, one pasted import batch, or a bulk request capped by the
+// handler), so it never needs chunking under SQLite's parameter limit.
+func sqlInList[T any](vals []T) (string, []any) {
+	marks := make([]string, len(vals))
+	args := make([]any, len(vals))
+	for i, v := range vals {
+		marks[i] = "?"
+		args[i] = v
+	}
+	return strings.Join(marks, ","), args
 }

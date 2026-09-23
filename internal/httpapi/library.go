@@ -34,9 +34,7 @@ type libraryViewData struct {
 	Status             string
 	Rows               []libraryRow
 
-	TotalTracked int
-	PausedCount  int
-	Difficulty   service.DifficultyCounts
+	Summary service.Summary
 
 	// Notice is the result of the last bulk pause/unpause, shown once
 	// after the redirect back here. BulkFields are the current filters,
@@ -149,24 +147,10 @@ func (s *Server) handleLibrary(w http.ResponseWriter, r *http.Request) {
 		data.Rows = append(data.Rows, row)
 	}
 
-	total, err = s.svc.CountProblems(ctx)
-	if err != nil {
+	if data.Summary, err = s.svc.Summary(ctx); err != nil {
 		s.renderError(w, r, http.StatusInternalServerError, err)
 		return
 	}
-	data.TotalTracked = total
-
-	if data.PausedCount, err = s.svc.CountPaused(ctx, nil); err != nil {
-		s.renderError(w, r, http.StatusInternalServerError, err)
-		return
-	}
-
-	difficulty, err := s.svc.DifficultyBreakdown(ctx)
-	if err != nil {
-		s.renderError(w, r, http.StatusInternalServerError, err)
-		return
-	}
-	data.Difficulty = difficulty
 
 	topics, err := s.svc.ListTopics(ctx)
 	if err != nil {

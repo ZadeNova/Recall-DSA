@@ -1,7 +1,7 @@
 {{define "content"}}
 <h1>Home</h1>
 
-{{if eq .TotalTracked 0}}
+{{if eq .Summary.Total 0}}
 <div class="section-card">
   <h2>Get started</h2>
   <p>Nothing tracked yet. Import your solved problems in bulk, or add them one at a time.</p>
@@ -13,24 +13,7 @@
 {{else}}
 <p><strong>{{.DueCount}}</strong> due for review.</p>
 
-<div class="stats-row">
-  <div class="stat-card">
-    <span class="meta">Total Tracked</span>
-    <div class="stat-number">{{.TotalTracked}}</div>
-  </div>
-  <div class="stat-card">
-    <span class="meta">Difficulty Split</span>
-    <div class="stat-number">
-      <span class="difficulty-Easy">{{.Difficulty.Easy}} Easy</span> ·
-      <span class="difficulty-Medium">{{.Difficulty.Medium}} Medium</span> ·
-      <span class="difficulty-Hard">{{.Difficulty.Hard}} Hard</span>
-    </div>
-  </div>
-  <div class="stat-card">
-    <span class="meta">Paused</span>
-    <div class="stat-number">{{.PausedCount}}</div>
-  </div>
-</div>
+{{template "summary-stats" .Summary}}
 
 <div class="home-layout">
   <div class="home-main">

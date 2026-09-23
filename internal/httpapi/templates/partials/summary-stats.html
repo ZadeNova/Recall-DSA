@@ -1,0 +1,20 @@
+{{define "summary-stats"}}
+<div class="stats-row">
+  <div class="stat-card">
+    <span class="meta">Total Tracked</span>
+    <div class="stat-number">{{.Total}}</div>
+  </div>
+  <div class="stat-card">
+    <span class="meta">Difficulty Split</span>
+    <div class="stat-number">
+      <span class="difficulty-Easy">{{.Difficulty.Easy}} Easy</span> ·
+      <span class="difficulty-Medium">{{.Difficulty.Medium}} Medium</span> ·
+      <span class="difficulty-Hard">{{.Difficulty.Hard}} Hard</span>
+    </div>
+  </div>
+  <div class="stat-card">
+    <span class="meta">Paused</span>
+    <div class="stat-number">{{.Paused}}</div>
+  </div>
+</div>
+{{end}}

@@ -572,3 +572,35 @@ func TestCountPaused_ScopedToTopic(t *testing.T) {
 		}
 	}
 }
+
+func TestSummary(t *testing.T) {
+	f := newPauseFixture(t)
+	if got, err := f.s.Summary(f.ctx); err != nil || got != (Summary{}) {
+		t.Fatalf("Summary on empty library = (%+v, %v), want zero value", got, err)
+	}
+
+	f.add("E1", "e1", DifficultyEasy, "2026-01-11")
+	f.add("E2", "e2", DifficultyEasy, "2026-01-11")
+	f.pause(f.add("M1", "m1", DifficultyMedium, "2026-01-11"))
+	f.pause(f.add("H1", "h1", DifficultyHard, "2026-01-11"))
+
+	got, err := f.s.Summary(f.ctx)
+	if err != nil {
+		t.Fatalf("Summary: unexpected err: %v", err)
+	}
+	want := Summary{Total: 4, Difficulty: DifficultyCounts{Easy: 2, Medium: 1, Hard: 1}, Paused: 2}
+	if got != want {
+		t.Errorf("Summary = %+v, want %+v", got, want)
+	}
+}
+
+func TestSQLInList(t *testing.T) {
+	marks, args := sqlInList([]int64{7, 8, 9})
+	if marks != "?,?,?" || !reflect.DeepEqual(args, []any{int64(7), int64(8), int64(9)}) {
+		t.Errorf("sqlInList(ints) = (%q, %v)", marks, args)
+	}
+	marks, args = sqlInList([]string{"two-sum"})
+	if marks != "?" || !reflect.DeepEqual(args, []any{"two-sum"}) {
+		t.Errorf("sqlInList(strings) = (%q, %v)", marks, args)
+	}
+}

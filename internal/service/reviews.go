@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/ZadeNova/recall-dsa/internal/scheduler"
@@ -312,21 +311,20 @@ func (s *Service) attachTopicsToItems(ctx context.Context, items []DueItem) erro
 		return nil
 	}
 
-	ids := make([]any, len(items))
-	placeholders := make([]string, len(items))
+	ids := make([]int64, len(items))
 	indexByID := make(map[int64]int, len(items))
 	for i, item := range items {
 		ids[i] = item.ID
-		placeholders[i] = "?"
 		indexByID[item.ID] = i
 	}
+	marks, args := sqlInList(ids)
 
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT pt.problem_id, t.name
 		FROM problem_topics pt
 		JOIN topics t ON t.id = pt.topic_id
-		WHERE pt.problem_id IN (`+strings.Join(placeholders, ",")+`)
-		ORDER BY t.name`, ids...)
+		WHERE pt.problem_id IN (`+marks+`)
+		ORDER BY t.name`, args...)
 	if err != nil {
 		return fmt.Errorf("service: batch load topics: %w", err)
 	}

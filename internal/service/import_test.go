@@ -230,19 +230,24 @@ func TestStaggerWindowDays(t *testing.T) {
 		name         string
 		n            int
 		targetPerDay int
+		minDays      int
 		want         int
 	}{
-		{"zero_target_falls_back_to_default_above_floor", 100, 0, 20}, // ceil(100/5)=20
-		{"negative_target_falls_back_to_default", 100, -3, 20},        // same fallback as zero
-		{"small_batch_floors_at_minStaggerDays", 3, 5, 14},            // ceil(3/5)=1, floored to 14
-		{"computed_window_below_floor_gets_floored", 100, 8, 14},      // ceil(100/8)=13, floored to 14
-		{"tighter_target_scales_above_floor", 100, 3, 34},             // ceil(100/3)=34
-		{"exact_division_above_floor", 100, 5, 20},                    // ceil(100/5)=20 exactly
+		{"zero_target_falls_back_to_default_above_floor", 100, 0, minStaggerDays, 20}, // ceil(100/5)=20
+		{"negative_target_falls_back_to_default", 100, -3, minStaggerDays, 20},        // same fallback as zero
+		{"small_batch_floors_at_minStaggerDays", 3, 5, minStaggerDays, 14},            // ceil(3/5)=1, floored to 14
+		{"computed_window_below_floor_gets_floored", 100, 8, minStaggerDays, 14},      // ceil(100/8)=13, floored to 14
+		{"tighter_target_scales_above_floor", 100, 3, minStaggerDays, 34},             // ceil(100/3)=34
+		{"exact_division_above_floor", 100, 5, minStaggerDays, 20},                    // ceil(100/5)=20 exactly
+		// Unpause uses a 1-day floor: a small batch isn't spread over two weeks.
+		{"unpause_small_batch_is_one_day", 3, 5, 1, 1},  // ceil(3/5)=1
+		{"unpause_twenty_at_five_per_day", 20, 5, 1, 4}, // ceil(20/5)=4
+		{"unpause_seven_at_five_per_day", 7, 5, 1, 2},   // ceil(7/5)=2
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			if got := staggerWindowDays(c.n, c.targetPerDay); got != c.want {
-				t.Errorf("staggerWindowDays(%d, %d) = %d, want %d", c.n, c.targetPerDay, got, c.want)
+			if got := staggerWindowDays(c.n, c.targetPerDay, c.minDays); got != c.want {
+				t.Errorf("staggerWindowDays(%d, %d, %d) = %d, want %d", c.n, c.targetPerDay, c.minDays, got, c.want)
 			}
 		})
 	}

@@ -18,6 +18,8 @@ type libraryRow struct {
 	service.DueItem
 	StatusLabel string
 	StatusClass string
+	Paused      bool
+	PausedSince string
 }
 
 const defaultLibrarySort = "next_review"
@@ -135,7 +137,16 @@ func (s *Server) handleLibrary(w http.ResponseWriter, r *http.Request) {
 
 	today := s.svc.Today()
 	for _, item := range items {
-		data.Rows = append(data.Rows, libraryRow{DueItem: item, StatusLabel: statusLabel(item.NextReviewDate, today), StatusClass: statusClass(item.NextReviewDate, today)})
+		row := libraryRow{DueItem: item, StatusLabel: statusLabel(item.NextReviewDate, today), StatusClass: statusClass(item.NextReviewDate, today)}
+		if item.PausedAt != nil {
+			// A paused problem's stored date is stale and no longer means
+			// "due", so show when it was paused instead of an overdue label.
+			row.Paused = true
+			row.StatusLabel = "Paused"
+			row.StatusClass = "status-paused"
+			row.PausedSince = item.PausedAt.In(today.Location()).Format("Jan 2")
+		}
+		data.Rows = append(data.Rows, row)
 	}
 
 	total, err = s.svc.CountProblems(ctx)

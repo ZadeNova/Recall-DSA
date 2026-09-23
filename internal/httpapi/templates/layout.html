@@ -120,7 +120,7 @@
      Do not add sizes/weights beyond what's listed there. */
   body { font-family: var(--font-sans); font-size: 15px; font-weight: 400; line-height: 1.5; max-width: 1200px; margin: 2rem auto; padding: 0 1rem; background: var(--bg); color: var(--text); }
   input, select, textarea { font-family: inherit; font-size: 15px; }
-  input[type="text"], select { padding: 0.35rem 0.5rem; border: 1px solid var(--border); border-radius: 4px; background: var(--surface-bg); color: var(--text); }
+  input[type="text"], input[type="number"], select { padding: 0.35rem 0.5rem; border: 1px solid var(--border); border-radius: 4px; background: var(--surface-bg); color: var(--text); }
   /* Base button look — every plain <button> gets this; more specific
      classes (.grade-btn, .theme-switcher a) have higher CSS specificity
      and override it where they need their own colors. */
@@ -129,8 +129,8 @@
   button.btn-danger { background: var(--danger); }
   a.btn-link { display: inline-block; background: var(--link); color: var(--color-base); border-radius: 4px; padding: 0.4rem 0.9rem; text-decoration: none; font-weight: 500; }
   a.btn-link:hover { filter: brightness(1.1); }
-  a.btn-secondary { display: inline-block; background: transparent; color: var(--text); border: 1px solid var(--border); border-radius: 4px; padding: 0.4rem 0.9rem; text-decoration: none; font-weight: 500; }
-  a.btn-secondary:hover { background: var(--surface-bg); }
+  a.btn-secondary, button.btn-secondary { display: inline-block; background: transparent; color: var(--text); border: 1px solid var(--border); border-radius: 4px; padding: 0.4rem 0.9rem; text-decoration: none; font-weight: 500; }
+  a.btn-secondary:hover, button.btn-secondary:hover { background: var(--surface-bg); filter: none; }
   h1 { font-size: 28px; font-weight: 600; line-height: 1.25; margin: 0 0 0.5rem; }
   h2 { font-size: 20px; font-weight: 600; line-height: 1.25; margin: 1.5rem 0 0.5rem; }
   th, label { font-size: 12px; font-weight: 500; }
@@ -247,6 +247,15 @@
   .status-overdue { color: var(--danger); font-size: 13px; font-weight: 500; }
   .status-due-today { color: var(--link); font-size: 13px; font-weight: 500; }
   .status-upcoming { color: var(--muted-text); font-size: 13px; }
+  .status-paused { color: var(--muted-text); font-size: 13px; font-weight: 500; }
+  .row-paused td { background: var(--surface-bg); }
+  .row-paused .problem-title { color: var(--muted-text); }
+  .row-selected td { background: var(--tag-bg); }
+  .badge-paused { display: inline-block; margin-left: 0.5rem; padding: 0.1rem 0.5rem; border-radius: 4px; background: var(--tag-bg); color: var(--muted-text); font-size: 12px; font-weight: 500; vertical-align: 0.1rem; }
+  .bulk-bar { display: flex; flex-wrap: wrap; gap: 0.5rem 0.75rem; align-items: center; margin-top: 1rem; }
+  .bulk-unpause { display: inline-flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
+  .bulk-unpause label { font-size: 12px; font-weight: 500; color: var(--muted-text); }
+  th.check, td.check { width: 2.2rem; padding-right: 0; }
   .pagination { display: flex; justify-content: space-between; align-items: center; margin-top: 1rem; }
   .pagination-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; }
   .page-size-form { display: inline; }

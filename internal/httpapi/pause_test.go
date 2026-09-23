@@ -392,3 +392,189 @@ func TestNothingDueMessageFor_Pluralizes(t *testing.T) {
 		t.Errorf("5 paused = %q, want plural wording", got)
 	}
 }
+
+// --- templates (Step 6) ---
+
+// bulkFormHTML returns the markup of the Library's bulk pause/unpause form.
+func bulkFormHTML(t *testing.T, body string) string {
+	t.Helper()
+	const open = `<form method="post" action="/problems/bulk-status"`
+	start := strings.Index(body, open)
+	if start < 0 {
+		t.Fatalf("Library has no bulk pause/unpause form:\n%s", body)
+	}
+	end := strings.Index(body[start:], "</form>")
+	if end < 0 {
+		t.Fatal("bulk form is never closed")
+	}
+	return body[start : start+end]
+}
+
+func TestLibrary_BulkFormHasCheckboxesAndButtons(t *testing.T) {
+	h, svc := pauseTestServer(t)
+	a := addSeedProblem(t, svc, "Two Sum", "two-sum")
+	b := addSeedProblem(t, svc, "Valid Anagram", "valid-anagram")
+
+	form := bulkFormHTML(t, doGet(t, h, "/library?sort=title&page_size=25").Body.String())
+
+	for _, id := range []int64{a, b} {
+		want := fmt.Sprintf(`name="id" value="%d"`, id)
+		if !strings.Contains(form, want) {
+			t.Errorf("no row checkbox %s in the bulk form", want)
+		}
+	}
+	for _, want := range []string{
+		`aria-label="Select Two Sum"`,
+		`aria-label="Select all on this page"`,
+		`name="action" value="pause"`,
+		`name="action" value="unpause"`,
+		`name="target_per_day"`,
+		`value="5"`,
+		`name="sort" value="title"`,
+		`name="page_size" value="25"`,
+	} {
+		if !strings.Contains(form, want) {
+			t.Errorf("bulk form is missing %s:\n%s", want, form)
+		}
+	}
+	// HTML forbids nested forms; a nested <form> would be silently dropped.
+	if strings.Contains(form[len("<form"):], "<form") {
+		t.Error("the bulk form contains another <form>")
+	}
+}
+
+// Enter in the number box would submit the form using its FIRST submit
+// button (Pause) when the user meant Unpause.
+func TestLibrary_TargetPerDayBlocksEnterKey(t *testing.T) {
+	h, svc := pauseTestServer(t)
+	addSeedProblem(t, svc, "Two Sum", "two-sum")
+
+	form := bulkFormHTML(t, doGet(t, h, "/library").Body.String())
+	i := strings.Index(form, `name="target_per_day"`)
+	if i < 0 {
+		t.Fatal("no target_per_day input")
+	}
+	tag := form[strings.LastIndex(form[:i], "<input"):]
+	tag = tag[:strings.Index(tag, ">")]
+	if !strings.Contains(tag, "onkeydown") || !strings.Contains(tag, "preventDefault") {
+		t.Errorf("target_per_day input doesn't block Enter: %s", tag)
+	}
+}
+
+func TestLibrary_BulkFormCarriesCurrentFilters(t *testing.T) {
+	h, svc := pauseTestServer(t)
+	addSeedProblem(t, svc, "Two Sum", "two-sum")
+
+	form := bulkFormHTML(t, doGet(t, h, "/library?status=all&q=two&difficulty=Easy&page_size=25").Body.String())
+	for _, want := range []string{
+		`name="status" value="all"`, `name="q" value="two"`, `name="difficulty" value="Easy"`,
+		`name="page_size" value="25"`, `name="page" value="1"`,
+	} {
+		if !strings.Contains(form, want) {
+			t.Errorf("bulk form doesn't carry %s, so the redirect would lose the filter", want)
+		}
+	}
+}
+
+func TestLibrary_StatusSelectReflectsCurrentFilter(t *testing.T) {
+	h, svc := pauseTestServer(t)
+	addSeedProblem(t, svc, "Two Sum", "two-sum")
+
+	for _, c := range []struct{ query, selected string }{
+		{"", "active"}, {"?status=paused", "paused"}, {"?status=all", "all"}, {"?status=bogus", "active"},
+	} {
+		body := doGet(t, h, "/library"+c.query).Body.String()
+		if !strings.Contains(body, `<option value="`+c.selected+`" selected>`) {
+			t.Errorf("query %q: status option %q not selected:\n%s", c.query, c.selected, body)
+		}
+		for _, v := range []string{"active", "paused", "all"} {
+			if !strings.Contains(body, `<option value="`+v+`"`) {
+				t.Errorf("status select is missing option %q", v)
+			}
+		}
+	}
+}
+
+func TestLibrary_PausedRowsAreMarkedUnderAll(t *testing.T) {
+	h, svc := pauseTestServer(t)
+	addSeedProblem(t, svc, "Active Problem", "active-problem")
+	paused := addSeedProblem(t, svc, "Paused Problem", "paused-problem")
+	if _, err := svc.PauseProblems(t.Context(), []int64{paused}); err != nil {
+		t.Fatalf("PauseProblems: unexpected err: %v", err)
+	}
+
+	body := doGet(t, h, "/library?status=all").Body.String()
+	if !strings.Contains(body, `class="row-paused"`) {
+		t.Errorf("paused row isn't styled:\n%s", body)
+	}
+	if got := strings.Count(body, `class="badge-paused"`); got != 1 {
+		t.Errorf("Paused badges = %d, want 1 (only the paused problem)", got)
+	}
+	if !strings.Contains(body, `class="status-paused">Paused</span>`) {
+		t.Errorf("Next Review column doesn't say Paused:\n%s", body)
+	}
+	if !strings.Contains(body, "since Jan 10") {
+		t.Errorf("Paused row doesn't say when it was paused:\n%s", body)
+	}
+	// The paused row must not show a stale overdue/due status.
+	if strings.Count(body, `class="status-upcoming"`)+strings.Count(body, `class="status-overdue"`)+strings.Count(body, `class="status-due-today"`) != 1 {
+		t.Errorf("expected exactly one dated status (the active problem's)")
+	}
+	// Paused rows sort after active ones.
+	if strings.Index(body, "Active Problem") > strings.Index(body, "Paused Problem") {
+		t.Error("paused row is listed before the active one")
+	}
+}
+
+func TestLibrary_ShowsNoticeAfterBulkAction(t *testing.T) {
+	h, svc := pauseTestServer(t)
+	addSeedProblem(t, svc, "Two Sum", "two-sum")
+
+	body := doGet(t, h, "/library?done=paused&n=3").Body.String()
+	if !strings.Contains(body, `role="status"`) || !strings.Contains(body, "Paused 3 problems.") {
+		t.Errorf("notice missing:\n%s", body)
+	}
+	if body := doGet(t, h, "/library").Body.String(); strings.Contains(body, `role="status"`) {
+		t.Error("a notice is shown when there is no bulk action to report")
+	}
+	if body := doGet(t, h, "/library?done=<script>&n=1").Body.String(); strings.Contains(body, "<script>&") {
+		t.Error("unrecognised done value leaked into the page")
+	}
+}
+
+func TestPausedStatCardOnLibraryAndHome(t *testing.T) {
+	h, svc := pauseTestServer(t)
+	a := addSeedProblem(t, svc, "A", "a")
+	b := addSeedProblem(t, svc, "B", "b")
+	addSeedProblem(t, svc, "C", "c")
+	if _, err := svc.PauseProblems(t.Context(), []int64{a, b}); err != nil {
+		t.Fatalf("PauseProblems: unexpected err: %v", err)
+	}
+
+	for _, path := range []string{"/library", "/"} {
+		body := doGet(t, h, path).Body.String()
+		i := strings.Index(body, `<span class="meta">Paused</span>`)
+		if i < 0 {
+			t.Errorf("%s has no Paused stat card", path)
+			continue
+		}
+		if !strings.Contains(body[i:i+120], `>2</div>`) {
+			t.Errorf("%s Paused card doesn't show 2: %s", path, body[i:i+120])
+		}
+		// Total Tracked is solve history and ignores pause state.
+		if !strings.Contains(body, `<div class="stat-number">3</div>`) {
+			t.Errorf("%s Total Tracked should still be 3", path)
+		}
+	}
+}
+
+func TestTopicsHeaderSaysProblems(t *testing.T) {
+	h, _ := pauseTestServer(t)
+	body := doGet(t, h, "/topics").Body.String()
+	if strings.Contains(body, "Active Problems") {
+		t.Error("Topics still says \"Active Problems\", but its counts include paused problems")
+	}
+	if !strings.Contains(body, "<th>Problems</th>") {
+		t.Error("Topics header \"Problems\" missing")
+	}
+}

@@ -1,6 +1,8 @@
 {{define "content"}}
 <h1>Library <span class="due-pill">{{.TotalTracked}} problems tracked</span></h1>
 
+{{if .Notice}}<p class="notice" role="status">{{.Notice}}</p>{{end}}
+
 <div class="stats-row">
   <div class="stat-card">
     <span class="meta">Total Tracked</span>
@@ -14,6 +16,10 @@
       <span class="difficulty-Hard">{{.Difficulty.Hard}} Hard</span>
     </div>
   </div>
+  <div class="stat-card">
+    <span class="meta">Paused</span>
+    <div class="stat-number">{{.PausedCount}}</div>
+  </div>
 </div>
 
 <form method="get" action="/library" class="library-toolbar">
@@ -26,6 +32,11 @@
     <option value="">All difficulties</option>
     {{range .Difficulties}}<option value="{{.}}" {{if eq . $.SelectedDifficulty}}selected{{end}}>{{.}}</option>{{end}}
   </select>
+  <select name="status" aria-label="Status">
+    <option value="active" {{if eq .Status "active"}}selected{{end}}>Status: Active</option>
+    <option value="paused" {{if eq .Status "paused"}}selected{{end}}>Status: Paused</option>
+    <option value="all" {{if eq .Status "all"}}selected{{end}}>Status: All</option>
+  </select>
   <select name="sort">
     <option value="next_review" {{if eq .Sort "next_review"}}selected{{end}}>Sort: Next Review</option>
     <option value="title" {{if eq .Sort "title"}}selected{{end}}>Sort: Title (A-Z)</option>
@@ -34,25 +45,64 @@
   <button type="submit">Filter</button>
 </form>
 
-<div class="table-scroll">
-<table>
-  <tr><th>Title</th><th>Difficulty</th><th>Topics</th><th>Interval</th><th>Next Review</th><th></th></tr>
-  {{range .Rows}}
-  <tr>
-    <td><a class="problem-title" href="{{.URL}}" target="leetcode">{{.Title}}</a></td>
-    <td class="difficulty-{{.Difficulty}}">{{.Difficulty}}</td>
-    <td>{{range .Topics}}<span class="topic-tag">{{.}}</span>{{end}}</td>
-    <td class="meta">{{.IntervalDays}} days</td>
-    <td><span class="{{.StatusClass}}">{{.StatusLabel}}</span></td>
-    <td><a href="/problems/{{.ID}}/edit">Edit</a></td>
-  </tr>
-  {{end}}
-</table>
-</div>
+<form method="post" action="/problems/bulk-status" id="bulk-form">
+  {{range .BulkFields}}<input type="hidden" name="{{.Name}}" value="{{.Value}}">{{end}}
+  <div class="bulk-bar">
+    <span class="meta" id="selected-count"></span>
+    <button type="submit" name="action" value="pause">Pause selected</button>
+    <span class="bulk-unpause">
+      <button type="submit" name="action" value="unpause" class="btn-secondary">Unpause selected</button>
+      <label for="target-per-day">Target reviews per day</label>
+      <input type="number" id="target-per-day" name="target_per_day" class="input-small" value="5" min="1" onkeydown="if (event.key === 'Enter') event.preventDefault();">
+    </span>
+  </div>
+
+  <div class="table-scroll">
+  <table>
+    <tr><th class="check"><input type="checkbox" id="select-all" aria-label="Select all on this page"></th><th>Title</th><th>Difficulty</th><th>Topics</th><th>Interval</th><th>Next Review</th><th></th></tr>
+    {{range .Rows}}
+    <tr{{if .Paused}} class="row-paused"{{end}}>
+      <td class="check"><input type="checkbox" class="row-check" name="id" value="{{.ID}}" aria-label="Select {{.Title}}"></td>
+      <td><a class="problem-title" href="{{.URL}}" target="leetcode">{{.Title}}</a>{{if .Paused}}<span class="badge-paused">Paused</span>{{end}}</td>
+      <td class="difficulty-{{.Difficulty}}">{{.Difficulty}}</td>
+      <td>{{range .Topics}}<span class="topic-tag">{{.}}</span>{{end}}</td>
+      <td class="meta">{{.IntervalDays}} days</td>
+      <td><span class="{{.StatusClass}}">{{.StatusLabel}}</span>{{if .Paused}} <span class="meta">since {{.PausedSince}}</span>{{end}}</td>
+      <td><a href="/problems/{{.ID}}/edit">Edit</a></td>
+    </tr>
+    {{end}}
+  </table>
+  </div>
+</form>
 
 {{template "pagination" .Page}}
 
 <script>
+  // Progressive enhancement: select-all, a live "N selected" count, and a
+  // highlight on ticked rows. Without JS the checkboxes and both buttons
+  // still work; you just tick rows by hand.
+  (function () {
+    var all = document.getElementById("select-all");
+    var count = document.getElementById("selected-count");
+    var boxes = Array.prototype.slice.call(document.querySelectorAll(".row-check"));
+    function update() {
+      var n = 0;
+      boxes.forEach(function (b) {
+        if (b.checked) n++;
+        b.closest("tr").classList.toggle("row-selected", b.checked);
+      });
+      all.checked = boxes.length > 0 && n === boxes.length;
+      all.indeterminate = n > 0 && n < boxes.length;
+      count.textContent = n + " selected";
+    }
+    all.addEventListener("change", function () {
+      boxes.forEach(function (b) { b.checked = all.checked; });
+      update();
+    });
+    boxes.forEach(function (b) { b.addEventListener("change", update); });
+    update();
+  })();
+
   document.addEventListener("keydown", function (e) {
     if (e.key !== "/" || document.activeElement.matches("input, textarea, select")) {
       return;

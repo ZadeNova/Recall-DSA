@@ -27,6 +27,34 @@ func newTestServer(t *testing.T) (http.Handler, *service.Service) {
 	return newTestServerAt(t)
 }
 
+// mustAddProblem adds a problem through the service, failing the test on
+// error. The input is spelled out at each call site so every test shows
+// exactly what it seeds.
+func mustAddProblem(t *testing.T, svc *service.Service, in service.AddProblemInput) service.AddProblemResult {
+	t.Helper()
+	res, err := svc.AddProblem(t.Context(), in)
+	if err != nil {
+		t.Fatalf("AddProblem(%s): unexpected err: %v", in.Title, err)
+	}
+	return res
+}
+
+// formHTML returns the markup of the first <form> in body that contains
+// marker, from the marker up to its </form>, so a test can assert on one
+// form's fields without matching the same text elsewhere on the page.
+func formHTML(t *testing.T, body, marker string) string {
+	t.Helper()
+	start := strings.Index(body, marker)
+	if start < 0 {
+		t.Fatalf("no form matching %q in body:\n%s", marker, body)
+	}
+	end := strings.Index(body[start:], "</form>")
+	if end < 0 {
+		t.Fatalf("form matching %q is never closed", marker)
+	}
+	return body[start : start+end]
+}
+
 // newTestServerAt is newTestServer with the clock optionally pinned, so a
 // test can assert on behavior that depends on what day it is without
 // depending on what day it actually is.
@@ -97,24 +125,19 @@ func TestHome_EmptyLibraryShowsGetStartedCard(t *testing.T) {
 // (FRONTEND.md, Decided UX facts #1).
 func TestHome_IsPureGlanceNoGradeButtonsAndNoUpcoming(t *testing.T) {
 	h, svc := newTestServer(t)
-	ctx := t.Context()
 
 	// Graded 10 days ago with a 5-day interval lands 5 days in the past:
 	// overdue, so it shows on Home's glance list.
-	if _, err := svc.AddProblem(ctx, service.AddProblemInput{
+	mustAddProblem(t, svc, service.AddProblemInput{
 		Title: "Due Now", URL: "due-now", Difficulty: service.DifficultyEasy,
 		Grade: "Good", At: time.Now().AddDate(0, 0, -10),
-	}); err != nil {
-		t.Fatalf("AddProblem: unexpected err: %v", err)
-	}
+	})
 	// Graded just now with a 5-day interval lands 5 days out: would be in
 	// the Upcoming window, which Home no longer shows at all.
-	if _, err := svc.AddProblem(ctx, service.AddProblemInput{
+	mustAddProblem(t, svc, service.AddProblemInput{
 		Title: "Upcoming Problem", URL: "upcoming-problem", Difficulty: service.DifficultyEasy,
 		Grade: "Good", At: time.Now(),
-	}); err != nil {
-		t.Fatalf("AddProblem: unexpected err: %v", err)
-	}
+	})
 
 	rec := doGet(t, h, "/")
 	body := rec.Body.String()
@@ -135,30 +158,23 @@ func TestHome_IsPureGlanceNoGradeButtonsAndNoUpcoming(t *testing.T) {
 
 func TestHome_ShowsStatsAndUpcomingByDay(t *testing.T) {
 	h, svc := newTestServer(t)
-	ctx := t.Context()
 
-	if _, err := svc.AddProblem(ctx, service.AddProblemInput{
+	mustAddProblem(t, svc, service.AddProblemInput{
 		Title: "Two Sum", URL: "two-sum", Difficulty: service.DifficultyEasy,
 		Grade: "Good", At: time.Now(), // +5 days -> "In 5 days" on the sidebar
-	}); err != nil {
-		t.Fatalf("AddProblem: unexpected err: %v", err)
-	}
-	if _, err := svc.AddProblem(ctx, service.AddProblemInput{
+	})
+	mustAddProblem(t, svc, service.AddProblemInput{
 		Title: "3Sum", URL: "3sum", Difficulty: service.DifficultyMedium,
 		Grade: "Good", At: time.Now(),
-	}); err != nil {
-		t.Fatalf("AddProblem: unexpected err: %v", err)
-	}
+	})
 	// Overdue, so it appears in the glance table itself (the two problems
 	// above are 5 days out — not yet due — so they never reach the
 	// glance table, only the sidebar). Graded Hard for a 3-day interval,
 	// a string that can't collide with the sidebar's own "In 5 days" text.
-	if _, err := svc.AddProblem(ctx, service.AddProblemInput{
+	mustAddProblem(t, svc, service.AddProblemInput{
 		Title: "Climbing Stairs", URL: "climbing-stairs", Difficulty: service.DifficultyEasy,
 		Grade: "Hard", At: time.Now().AddDate(0, 0, -10),
-	}); err != nil {
-		t.Fatalf("AddProblem: unexpected err: %v", err)
-	}
+	})
 
 	rec := doGet(t, h, "/")
 	body := rec.Body.String()
@@ -199,22 +215,15 @@ func TestDue_EmptyShowsNothingDueMessage(t *testing.T) {
 // remaining, testable half is just that the class is still emitted.
 func TestDue_ShowsUpcomingSectionViewOnly(t *testing.T) {
 	h, svc := newTestServer(t)
-	ctx := t.Context()
 
-	overdue, err := svc.AddProblem(ctx, service.AddProblemInput{
+	overdue := mustAddProblem(t, svc, service.AddProblemInput{
 		Title: "Overdue Problem", URL: "overdue-problem", Difficulty: service.DifficultyEasy,
 		Grade: "Good", At: time.Now().AddDate(0, 0, -10),
 	})
-	if err != nil {
-		t.Fatalf("AddProblem: unexpected err: %v", err)
-	}
-	upcoming, err := svc.AddProblem(ctx, service.AddProblemInput{
+	upcoming := mustAddProblem(t, svc, service.AddProblemInput{
 		Title: "Upcoming Problem", URL: "upcoming-problem", Difficulty: service.DifficultyHard,
 		Grade: "Good", At: time.Now(),
 	})
-	if err != nil {
-		t.Fatalf("AddProblem: unexpected err: %v", err)
-	}
 
 	rec := doGet(t, h, "/due")
 	body := rec.Body.String()
@@ -237,35 +246,26 @@ func TestDue_ShowsUpcomingSectionViewOnly(t *testing.T) {
 
 func TestDue_TopicFilterAppliesToBothDueAndUpcoming(t *testing.T) {
 	h, svc := newTestServer(t)
-	ctx := t.Context()
 
 	// Overdue + upcoming, both tagged Graphs.
-	if _, err := svc.AddProblem(ctx, service.AddProblemInput{
+	mustAddProblem(t, svc, service.AddProblemInput{
 		Title: "Graphs Overdue", URL: "graphs-overdue", Difficulty: service.DifficultyEasy,
 		Topics: []string{"Graphs"}, Grade: "Good", At: time.Now().AddDate(0, 0, -10),
-	}); err != nil {
-		t.Fatalf("AddProblem: unexpected err: %v", err)
-	}
-	if _, err := svc.AddProblem(ctx, service.AddProblemInput{
+	})
+	mustAddProblem(t, svc, service.AddProblemInput{
 		Title: "Graphs Upcoming", URL: "graphs-upcoming", Difficulty: service.DifficultyEasy,
 		Topics: []string{"Graphs"}, Grade: "Good", At: time.Now(),
-	}); err != nil {
-		t.Fatalf("AddProblem: unexpected err: %v", err)
-	}
+	})
 	// Overdue + upcoming, both tagged Arrays & Hashing — should be
 	// excluded entirely once filtered to Graphs.
-	if _, err := svc.AddProblem(ctx, service.AddProblemInput{
+	mustAddProblem(t, svc, service.AddProblemInput{
 		Title: "Arrays Overdue", URL: "arrays-overdue", Difficulty: service.DifficultyEasy,
 		Topics: []string{"Arrays & Hashing"}, Grade: "Good", At: time.Now().AddDate(0, 0, -10),
-	}); err != nil {
-		t.Fatalf("AddProblem: unexpected err: %v", err)
-	}
-	if _, err := svc.AddProblem(ctx, service.AddProblemInput{
+	})
+	mustAddProblem(t, svc, service.AddProblemInput{
 		Title: "Arrays Upcoming", URL: "arrays-upcoming", Difficulty: service.DifficultyEasy,
 		Topics: []string{"Arrays & Hashing"}, Grade: "Good", At: time.Now(),
-	}); err != nil {
-		t.Fatalf("AddProblem: unexpected err: %v", err)
-	}
+	})
 
 	rec := doGet(t, h, "/due?topic="+url.QueryEscape("Graphs"))
 	body := rec.Body.String()
@@ -384,16 +384,13 @@ func TestCreateProblem_MergesCheckedTopicsAndFreeTextTopics(t *testing.T) {
 
 func TestLibrary_SearchFiltersByTitle(t *testing.T) {
 	h, svc := newTestServer(t)
-	ctx := t.Context()
 
 	mustAdd := func(title, slug string) {
 		t.Helper()
-		if _, err := svc.AddProblem(ctx, service.AddProblemInput{
+		mustAddProblem(t, svc, service.AddProblemInput{
 			Title: title, URL: slug, Difficulty: service.DifficultyEasy,
 			Grade: "Good", At: time.Now(),
-		}); err != nil {
-			t.Fatalf("AddProblem(%s): unexpected err: %v", title, err)
-		}
+		})
 	}
 	mustAdd("Two Sum", "two-sum")
 	mustAdd("Climbing Stairs", "climbing-stairs")
@@ -416,22 +413,14 @@ func TestLibrary_SearchFiltersByTitle(t *testing.T) {
 // manually with curl when the #7 pagination consolidation landed.
 func TestLibrary_PageSizeFormPreservesActiveFilters(t *testing.T) {
 	h, svc := newTestServer(t)
-	ctx := t.Context()
 
-	if _, err := svc.AddProblem(ctx, service.AddProblemInput{
+	mustAddProblem(t, svc, service.AddProblemInput{
 		Title: "Two Sum", URL: "two-sum", Difficulty: service.DifficultyEasy,
 		Topics: []string{"Arrays & Hashing"}, Grade: "Good", At: time.Now(),
-	}); err != nil {
-		t.Fatalf("AddProblem: unexpected err: %v", err)
-	}
+	})
 
 	body := doGet(t, h, "/library?q=Sum&topic=Arrays+%26+Hashing&sort=title").Body.String()
-	formStart := strings.Index(body, `class="page-size-form"`)
-	if formStart == -1 {
-		t.Fatalf("page-size-form not found in body:\n%s", body)
-	}
-	formEnd := strings.Index(body[formStart:], "</form>")
-	form := body[formStart : formStart+formEnd]
+	form := formHTML(t, body, `class="page-size-form"`)
 
 	for _, want := range []string{
 		`name="q" value="Sum"`,
@@ -446,14 +435,11 @@ func TestLibrary_PageSizeFormPreservesActiveFilters(t *testing.T) {
 
 func TestLibrary_ShowsIntervalAndStatusColumns(t *testing.T) {
 	h, svc := newTestServer(t)
-	ctx := t.Context()
 
-	if _, err := svc.AddProblem(ctx, service.AddProblemInput{
+	mustAddProblem(t, svc, service.AddProblemInput{
 		Title: "Two Sum", URL: "two-sum", Difficulty: service.DifficultyEasy,
 		Grade: "Failed", At: time.Now(),
-	}); err != nil {
-		t.Fatalf("AddProblem: unexpected err: %v", err)
-	}
+	})
 
 	body := doGet(t, h, "/library").Body.String()
 	if !strings.Contains(body, "1 days") {
@@ -511,12 +497,10 @@ func seedPaginatedProblems(t *testing.T, svc *service.Service, n int, overdue bo
 	}
 	for i := 0; i < n; i++ {
 		title := "Problem " + strconv.Itoa(i)
-		if _, err := svc.AddProblem(t.Context(), service.AddProblemInput{
+		mustAddProblem(t, svc, service.AddProblemInput{
 			Title: title, URL: "problem-" + strconv.Itoa(i), Difficulty: service.DifficultyEasy,
 			Grade: "Good", At: at,
-		}); err != nil {
-			t.Fatalf("AddProblem(%s): unexpected err: %v", title, err)
-		}
+		})
 	}
 }
 
@@ -608,27 +592,22 @@ func TestLibrary_SinglePageHidesNextLink(t *testing.T) {
 // section is on which page).
 func TestDue_SectionsPaginateIndependently(t *testing.T) {
 	h, svc := newTestServer(t)
-	ctx := t.Context()
 
 	// Zero-padded so no title is a substring of another (DueItem-1 would
 	// otherwise match DueItem-10..19).
 	for i := 0; i < 15; i++ {
 		title := fmt.Sprintf("DueItem-%02d", i)
-		if _, err := svc.AddProblem(ctx, service.AddProblemInput{
+		mustAddProblem(t, svc, service.AddProblemInput{
 			Title: title, URL: fmt.Sprintf("due-item-%02d", i), Difficulty: service.DifficultyEasy,
 			Grade: "Good", At: time.Now().AddDate(0, 0, -10),
-		}); err != nil {
-			t.Fatalf("AddProblem(%s): unexpected err: %v", title, err)
-		}
+		})
 	}
 	for i := 0; i < 15; i++ {
 		title := fmt.Sprintf("UpItem-%02d", i)
-		if _, err := svc.AddProblem(ctx, service.AddProblemInput{
+		mustAddProblem(t, svc, service.AddProblemInput{
 			Title: title, URL: fmt.Sprintf("up-item-%02d", i), Difficulty: service.DifficultyEasy,
 			Grade: "Good", At: time.Now(), // 5-day interval, inside the 7-day Upcoming window
-		}); err != nil {
-			t.Fatalf("AddProblem(%s): unexpected err: %v", title, err)
-		}
+		})
 	}
 
 	// Due-now paged to page 2 (items 10-14), Upcoming left on page 1
@@ -654,13 +633,10 @@ func TestEditProblem_PrefillsFormAndUpdatePersists(t *testing.T) {
 	h, svc := newTestServer(t)
 	ctx := t.Context()
 
-	problem, err := svc.AddProblem(ctx, service.AddProblemInput{
+	problem := mustAddProblem(t, svc, service.AddProblemInput{
 		Title: "Two Sum", URL: "two-sum", Difficulty: service.DifficultyEasy,
 		Topics: []string{"Arrays & Hashing"}, Grade: "Good", At: time.Now(),
 	})
-	if err != nil {
-		t.Fatalf("AddProblem: unexpected err: %v", err)
-	}
 
 	editPath := "/problems/" + strconv.FormatInt(problem.ID, 10) + "/edit"
 	rec := doGet(t, h, editPath)
@@ -745,13 +721,10 @@ func TestGradeExistingProblem_UpdatesReviewStateAndRedirects(t *testing.T) {
 	h, svc := newTestServer(t)
 	ctx := t.Context()
 
-	problem, err := svc.AddProblem(ctx, service.AddProblemInput{
+	problem := mustAddProblem(t, svc, service.AddProblemInput{
 		Title: "Two Sum", URL: "two-sum", Difficulty: service.DifficultyEasy,
 		Grade: "Good", At: time.Now(),
 	})
-	if err != nil {
-		t.Fatalf("AddProblem: unexpected err: %v", err)
-	}
 
 	rec := doForm(t, h, http.MethodPost, "/problems/"+strconv.FormatInt(problem.ID, 10)+"/grade", url.Values{"grade": {"Easy"}})
 	if rec.Code != http.StatusSeeOther || rec.Header().Get("Location") != "/due" {
@@ -775,17 +748,13 @@ func TestGradeExistingProblem_UpdatesReviewStateAndRedirects(t *testing.T) {
 
 func TestGrade_HtmxRefreshesStatsAndNavPillOutOfBand(t *testing.T) {
 	h, svc := newTestServer(t)
-	ctx := t.Context()
 
 	overdueProblem := func(title, slug string) int64 {
 		t.Helper()
-		p, err := svc.AddProblem(ctx, service.AddProblemInput{
+		p := mustAddProblem(t, svc, service.AddProblemInput{
 			Title: title, URL: slug, Difficulty: service.DifficultyEasy,
 			Grade: "Good", At: time.Now().AddDate(0, 0, -10),
 		})
-		if err != nil {
-			t.Fatalf("AddProblem(%s): unexpected err: %v", title, err)
-		}
 		return p.ID
 	}
 
@@ -821,21 +790,15 @@ func TestGrade_HtmxRefreshesStatsAndNavPillOutOfBand(t *testing.T) {
 
 func TestGrade_HtmxOOBStatsRespectTopicFilter(t *testing.T) {
 	h, svc := newTestServer(t)
-	ctx := t.Context()
 
-	graphs, err := svc.AddProblem(ctx, service.AddProblemInput{
+	graphs := mustAddProblem(t, svc, service.AddProblemInput{
 		Title: "Number of Islands", URL: "number-of-islands", Difficulty: service.DifficultyMedium,
 		Topics: []string{"Graphs"}, Grade: "Good", At: time.Now().AddDate(0, 0, -10),
 	})
-	if err != nil {
-		t.Fatalf("AddProblem: unexpected err: %v", err)
-	}
-	if _, err := svc.AddProblem(ctx, service.AddProblemInput{
+	mustAddProblem(t, svc, service.AddProblemInput{
 		Title: "Two Sum", URL: "two-sum", Difficulty: service.DifficultyEasy,
 		Topics: []string{"Arrays & Hashing"}, Grade: "Good", At: time.Now().AddDate(0, 0, -10),
-	}); err != nil {
-		t.Fatalf("AddProblem: unexpected err: %v", err)
-	}
+	})
 
 	// Grading the sole Graphs-tagged problem, filtered to Graphs: the
 	// page-scoped stats should drop to 0 (nothing else tagged Graphs is
@@ -862,15 +825,11 @@ func TestGrade_HtmxOOBStatsRespectTopicFilter(t *testing.T) {
 
 func TestDeleteProblem_RemovesFromLibrary(t *testing.T) {
 	h, svc := newTestServer(t)
-	ctx := t.Context()
 
-	problem, err := svc.AddProblem(ctx, service.AddProblemInput{
+	problem := mustAddProblem(t, svc, service.AddProblemInput{
 		Title: "Two Sum", URL: "two-sum", Difficulty: service.DifficultyEasy,
 		Grade: "Good", At: time.Now(),
 	})
-	if err != nil {
-		t.Fatalf("AddProblem: unexpected err: %v", err)
-	}
 
 	rec := doForm(t, h, http.MethodPost, "/problems/"+strconv.FormatInt(problem.ID, 10)+"/delete", url.Values{})
 	if rec.Code != http.StatusSeeOther || rec.Header().Get("Location") != "/library" {
@@ -962,13 +921,10 @@ func TestGrade_UsesServiceClockNotHostClock(t *testing.T) {
 	pinned := time.Date(2031, 7, 2, 23, 45, 0, 0, loc)
 	h, svc := newTestServerAt(t, service.WithClock(func() time.Time { return pinned }))
 
-	added, err := svc.AddProblem(t.Context(), service.AddProblemInput{
+	added := mustAddProblem(t, svc, service.AddProblemInput{
 		Title: "Valid Anagram", URL: "valid-anagram", Difficulty: service.DifficultyEasy,
 		Grade: "Good", At: pinned.AddDate(0, 0, -10),
 	})
-	if err != nil {
-		t.Fatalf("AddProblem: unexpected err: %v", err)
-	}
 
 	rec := doForm(t, h, http.MethodPost, "/problems/"+strconv.FormatInt(added.ID, 10)+"/grade",
 		url.Values{"grade": {"Good"}})
@@ -996,12 +952,10 @@ func TestGrade_UsesServiceClockNotHostClock(t *testing.T) {
 func TestCreateProblem_ExistingSlugReportsMergeInsteadOfSilentRedirect(t *testing.T) {
 	h, svc := newTestServer(t)
 
-	if _, err := svc.AddProblem(t.Context(), service.AddProblemInput{
+	mustAddProblem(t, svc, service.AddProblemInput{
 		Title: "Two Sum", URL: "two-sum", Difficulty: service.DifficultyEasy,
 		Topics: []string{"Arrays & Hashing"}, Grade: "Good", At: time.Now(),
-	}); err != nil {
-		t.Fatalf("AddProblem: unexpected err: %v", err)
-	}
+	})
 
 	rec := doForm(t, h, http.MethodPost, "/problems", url.Values{
 		"title":      {"Totally Different Title"},
@@ -1041,12 +995,9 @@ func TestCreateProblem_ReAddingAPausedProblemSaysSoAndKeepsItPaused(t *testing.T
 	h, svc := newTestServer(t)
 	ctx := t.Context()
 
-	added, err := svc.AddProblem(ctx, service.AddProblemInput{
+	added := mustAddProblem(t, svc, service.AddProblemInput{
 		Title: "Two Sum", URL: "two-sum", Difficulty: service.DifficultyEasy, Grade: "Good", At: time.Now(),
 	})
-	if err != nil {
-		t.Fatalf("AddProblem: unexpected err: %v", err)
-	}
 	if _, err := svc.PauseProblems(ctx, []int64{added.ID}); err != nil {
 		t.Fatalf("PauseProblems: unexpected err: %v", err)
 	}
@@ -1081,11 +1032,9 @@ func TestCreateProblem_ReAddingAPausedProblemSaysSoAndKeepsItPaused(t *testing.T
 func TestCreateProblem_ReAddingAnActiveProblemHasNoPausedNote(t *testing.T) {
 	h, svc := newTestServer(t)
 
-	if _, err := svc.AddProblem(t.Context(), service.AddProblemInput{
+	mustAddProblem(t, svc, service.AddProblemInput{
 		Title: "Two Sum", URL: "two-sum", Difficulty: service.DifficultyEasy, Grade: "Good", At: time.Now(),
-	}); err != nil {
-		t.Fatalf("AddProblem: unexpected err: %v", err)
-	}
+	})
 
 	rec := doForm(t, h, http.MethodPost, "/problems", url.Values{
 		"title": {"Two Sum"}, "url": {"two-sum"}, "difficulty": {"Easy"}, "grade": {"Good"},

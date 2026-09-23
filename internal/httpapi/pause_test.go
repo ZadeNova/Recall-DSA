@@ -13,8 +13,9 @@ import (
 	"github.com/ZadeNova/recall-dsa/internal/service"
 )
 
-// pauseTestServer pins the clock to 2026-01-10 (Asia/Singapore's "today").
-func pauseTestServer(t *testing.T) (http.Handler, *service.Service) {
+// pinnedTestServer is newTestServer with the clock pinned so "today" is
+// 2026-01-10 in Asia/Singapore, for tests that assert on dates.
+func pinnedTestServer(t *testing.T) (http.Handler, *service.Service) {
 	t.Helper()
 	pinned := time.Date(2026, 1, 10, 9, 0, 0, 0, time.UTC)
 	return newTestServerAt(t, service.WithClock(func() time.Time { return pinned }))
@@ -22,12 +23,9 @@ func pauseTestServer(t *testing.T) (http.Handler, *service.Service) {
 
 func addSeedProblem(t *testing.T, svc *service.Service, title, slug string) int64 {
 	t.Helper()
-	res, err := svc.AddProblem(t.Context(), service.AddProblemInput{
+	res := mustAddProblem(t, svc, service.AddProblemInput{
 		Title: title, URL: slug, Difficulty: service.DifficultyEasy, Grade: "Good", At: svc.Now(),
 	})
-	if err != nil {
-		t.Fatalf("AddProblem(%s): unexpected err: %v", title, err)
-	}
 	return res.ID
 }
 
@@ -61,7 +59,7 @@ func countStatus(t *testing.T, svc *service.Service, status service.Status) int 
 }
 
 func TestBulkStatus_PauseRedirectsBackWithFiltersAndResult(t *testing.T) {
-	h, svc := pauseTestServer(t)
+	h, svc := pinnedTestServer(t)
 	a := addSeedProblem(t, svc, "A", "a")
 	b := addSeedProblem(t, svc, "B", "b")
 	addSeedProblem(t, svc, "C", "c")
@@ -95,7 +93,7 @@ func TestBulkStatus_PauseRedirectsBackWithFiltersAndResult(t *testing.T) {
 }
 
 func TestBulkStatus_UnpauseStaggersUsingTargetPerDay(t *testing.T) {
-	h, svc := pauseTestServer(t)
+	h, svc := pinnedTestServer(t)
 	a := addSeedProblem(t, svc, "A", "a")
 	b := addSeedProblem(t, svc, "B", "b")
 	// Make both overdue, so their slots (not their old dates) decide the
@@ -132,7 +130,7 @@ func TestBulkStatus_UnpauseStaggersUsingTargetPerDay(t *testing.T) {
 }
 
 func TestBulkStatus_BadTargetPerDayFallsBackToDefault(t *testing.T) {
-	h, svc := pauseTestServer(t)
+	h, svc := pinnedTestServer(t)
 	a := addSeedProblem(t, svc, "A", "a")
 	if _, err := svc.PauseProblems(t.Context(), []int64{a}); err != nil {
 		t.Fatalf("PauseProblems: unexpected err: %v", err)
@@ -152,7 +150,7 @@ func TestBulkStatus_BadTargetPerDayFallsBackToDefault(t *testing.T) {
 }
 
 func TestBulkStatus_NothingSelectedIsANoticeNotAnError(t *testing.T) {
-	h, svc := pauseTestServer(t)
+	h, svc := pinnedTestServer(t)
 	addSeedProblem(t, svc, "A", "a")
 
 	rec := doForm(t, h, http.MethodPost, "/problems/bulk-status", url.Values{"action": {"pause"}, "status": {"all"}})
@@ -170,7 +168,7 @@ func TestBulkStatus_NothingSelectedIsANoticeNotAnError(t *testing.T) {
 }
 
 func TestBulkStatus_BadInputIs400AndChangesNothing(t *testing.T) {
-	h, svc := pauseTestServer(t)
+	h, svc := pinnedTestServer(t)
 	a := addSeedProblem(t, svc, "A", "a")
 
 	cases := []struct {
@@ -195,7 +193,7 @@ func TestBulkStatus_BadInputIs400AndChangesNothing(t *testing.T) {
 }
 
 func TestBulkStatus_UnknownIDsAreIgnored(t *testing.T) {
-	h, svc := pauseTestServer(t)
+	h, svc := pinnedTestServer(t)
 	a := addSeedProblem(t, svc, "A", "a")
 
 	rec := doForm(t, h, http.MethodPost, "/problems/bulk-status", idsForm("pause", a, 999999))
@@ -209,7 +207,7 @@ func TestBulkStatus_UnknownIDsAreIgnored(t *testing.T) {
 // The redirect is rebuilt from a whitelist of params, never echoed, so a
 // crafted form can't smuggle a foreign URL or extra params into it.
 func TestBulkStatus_RedirectIgnoresUnknownParams(t *testing.T) {
-	h, svc := pauseTestServer(t)
+	h, svc := pinnedTestServer(t)
 	a := addSeedProblem(t, svc, "A", "a")
 
 	form := idsForm("pause", a)
@@ -230,7 +228,7 @@ func TestBulkStatus_RedirectIgnoresUnknownParams(t *testing.T) {
 }
 
 func TestBulkStatus_GETIsNotAllowed(t *testing.T) {
-	h, _ := pauseTestServer(t)
+	h, _ := pinnedTestServer(t)
 	rec := doGet(t, h, "/problems/bulk-status")
 	if rec.Code != http.StatusMethodNotAllowed && rec.Code != http.StatusNotFound {
 		t.Errorf("GET status = %d, want 405 (state changes are POST-only)", rec.Code)
@@ -277,7 +275,7 @@ func titlesIn(body string, titles ...string) (present, absent []string) {
 }
 
 func TestLibrary_StatusFilterControlsWhichRowsAreListed(t *testing.T) {
-	h, svc := pauseTestServer(t)
+	h, svc := pinnedTestServer(t)
 	addSeedProblem(t, svc, "Active Problem", "active-problem")
 	paused := addSeedProblem(t, svc, "Paused Problem", "paused-problem")
 	if _, err := svc.PauseProblems(t.Context(), []int64{paused}); err != nil {
@@ -313,7 +311,7 @@ func TestLibrary_StatusFilterControlsWhichRowsAreListed(t *testing.T) {
 // of params; if status weren't in it, clicking Next would silently drop
 // back to the Active view.
 func TestLibrary_StatusSurvivesPagination(t *testing.T) {
-	h, svc := pauseTestServer(t)
+	h, svc := pinnedTestServer(t)
 	var ids []int64
 	for i := 0; i < 12; i++ {
 		ids = append(ids, addSeedProblem(t, svc, fmt.Sprintf("Problem %02d", i), fmt.Sprintf("problem-%02d", i)))
@@ -343,7 +341,7 @@ func TestLibrary_StatusSurvivesPagination(t *testing.T) {
 // --- empty-state messages when everything due is paused ---
 
 func TestHomeAndDue_EmptyStateMentionsPausedProblems(t *testing.T) {
-	h, svc := pauseTestServer(t)
+	h, svc := pinnedTestServer(t)
 	a := addSeedProblem(t, svc, "A", "a")
 	b := addSeedProblem(t, svc, "B", "b")
 	// Both are overdue, then paused: nothing is due, but two are paused.
@@ -373,7 +371,7 @@ func TestHomeAndDue_EmptyStateMentionsPausedProblems(t *testing.T) {
 }
 
 func TestHomeAndDue_EmptyStateHasNoPausedNoteWhenNothingIsPaused(t *testing.T) {
-	h, _ := pauseTestServer(t)
+	h, _ := pinnedTestServer(t)
 	for _, path := range []string{"/", "/due"} {
 		if body := doGet(t, h, path).Body.String(); strings.Contains(body, "currently paused") {
 			t.Errorf("%s mentions paused problems when none exist", path)
@@ -398,20 +396,11 @@ func TestNothingDueMessageFor_Pluralizes(t *testing.T) {
 // bulkFormHTML returns the markup of the Library's bulk pause/unpause form.
 func bulkFormHTML(t *testing.T, body string) string {
 	t.Helper()
-	const open = `<form method="post" action="/problems/bulk-status"`
-	start := strings.Index(body, open)
-	if start < 0 {
-		t.Fatalf("Library has no bulk pause/unpause form:\n%s", body)
-	}
-	end := strings.Index(body[start:], "</form>")
-	if end < 0 {
-		t.Fatal("bulk form is never closed")
-	}
-	return body[start : start+end]
+	return formHTML(t, body, `<form method="post" action="/problems/bulk-status"`)
 }
 
 func TestLibrary_BulkFormHasCheckboxesAndButtons(t *testing.T) {
-	h, svc := pauseTestServer(t)
+	h, svc := pinnedTestServer(t)
 	a := addSeedProblem(t, svc, "Two Sum", "two-sum")
 	b := addSeedProblem(t, svc, "Valid Anagram", "valid-anagram")
 
@@ -446,7 +435,7 @@ func TestLibrary_BulkFormHasCheckboxesAndButtons(t *testing.T) {
 // Enter in the number box would submit the form using its FIRST submit
 // button (Pause) when the user meant Unpause.
 func TestLibrary_TargetPerDayBlocksEnterKey(t *testing.T) {
-	h, svc := pauseTestServer(t)
+	h, svc := pinnedTestServer(t)
 	addSeedProblem(t, svc, "Two Sum", "two-sum")
 
 	form := bulkFormHTML(t, doGet(t, h, "/library").Body.String())
@@ -462,7 +451,7 @@ func TestLibrary_TargetPerDayBlocksEnterKey(t *testing.T) {
 }
 
 func TestLibrary_BulkFormCarriesCurrentFilters(t *testing.T) {
-	h, svc := pauseTestServer(t)
+	h, svc := pinnedTestServer(t)
 	addSeedProblem(t, svc, "Two Sum", "two-sum")
 
 	form := bulkFormHTML(t, doGet(t, h, "/library?status=all&q=two&difficulty=Easy&page_size=25").Body.String())
@@ -477,7 +466,7 @@ func TestLibrary_BulkFormCarriesCurrentFilters(t *testing.T) {
 }
 
 func TestLibrary_StatusSelectReflectsCurrentFilter(t *testing.T) {
-	h, svc := pauseTestServer(t)
+	h, svc := pinnedTestServer(t)
 	addSeedProblem(t, svc, "Two Sum", "two-sum")
 
 	for _, c := range []struct{ query, selected string }{
@@ -496,7 +485,7 @@ func TestLibrary_StatusSelectReflectsCurrentFilter(t *testing.T) {
 }
 
 func TestLibrary_PausedRowsAreMarkedUnderAll(t *testing.T) {
-	h, svc := pauseTestServer(t)
+	h, svc := pinnedTestServer(t)
 	addSeedProblem(t, svc, "Active Problem", "active-problem")
 	paused := addSeedProblem(t, svc, "Paused Problem", "paused-problem")
 	if _, err := svc.PauseProblems(t.Context(), []int64{paused}); err != nil {
@@ -527,7 +516,7 @@ func TestLibrary_PausedRowsAreMarkedUnderAll(t *testing.T) {
 }
 
 func TestLibrary_ShowsNoticeAfterBulkAction(t *testing.T) {
-	h, svc := pauseTestServer(t)
+	h, svc := pinnedTestServer(t)
 	addSeedProblem(t, svc, "Two Sum", "two-sum")
 
 	body := doGet(t, h, "/library?done=paused&n=3").Body.String()
@@ -543,7 +532,7 @@ func TestLibrary_ShowsNoticeAfterBulkAction(t *testing.T) {
 }
 
 func TestPausedStatCardOnLibraryAndHome(t *testing.T) {
-	h, svc := pauseTestServer(t)
+	h, svc := pinnedTestServer(t)
 	a := addSeedProblem(t, svc, "A", "a")
 	b := addSeedProblem(t, svc, "B", "b")
 	addSeedProblem(t, svc, "C", "c")
@@ -569,7 +558,7 @@ func TestPausedStatCardOnLibraryAndHome(t *testing.T) {
 }
 
 func TestTopicsHeaderSaysProblems(t *testing.T) {
-	h, _ := pauseTestServer(t)
+	h, _ := pinnedTestServer(t)
 	body := doGet(t, h, "/topics").Body.String()
 	if strings.Contains(body, "Active Problems") {
 		t.Error("Topics still says \"Active Problems\", but its counts include paused problems")
@@ -582,16 +571,12 @@ func TestTopicsHeaderSaysProblems(t *testing.T) {
 // The Filter button submits a plain GET form. If the form doesn't carry the
 // current page size, clicking Filter silently resets it to the default.
 func TestLibrary_FilterFormCarriesPageSize(t *testing.T) {
-	h, svc := pauseTestServer(t)
+	h, svc := pinnedTestServer(t)
 	addSeedProblem(t, svc, "Two Sum", "two-sum")
 
 	for _, size := range []string{"10", "25", "50"} {
 		body := doGet(t, h, "/library?page_size="+size).Body.String()
-		start := strings.Index(body, `<form method="get" action="/library" class="library-toolbar">`)
-		if start < 0 {
-			t.Fatal("Library has no filter toolbar form")
-		}
-		form := body[start : start+strings.Index(body[start:], "</form>")]
+		form := formHTML(t, body, `<form method="get" action="/library" class="library-toolbar">`)
 		if !strings.Contains(form, `name="page_size" value="`+size+`"`) {
 			t.Errorf("page_size=%s: the Filter form drops the page size:\n%s", size, form)
 		}
@@ -601,15 +586,12 @@ func TestLibrary_FilterFormCarriesPageSize(t *testing.T) {
 // With a topic filter, the empty-queue note must count only paused
 // problems in that topic, not every paused problem.
 func TestDue_PausedNoteIsScopedToTheTopicFilter(t *testing.T) {
-	h, svc := pauseTestServer(t)
+	h, svc := pinnedTestServer(t)
 	add := func(title, slug, topic string) int64 {
 		t.Helper()
-		res, err := svc.AddProblem(t.Context(), service.AddProblemInput{
+		res := mustAddProblem(t, svc, service.AddProblemInput{
 			Title: title, URL: slug, Difficulty: service.DifficultyEasy, Topics: []string{topic}, Grade: "Good", At: svc.Now(),
 		})
-		if err != nil {
-			t.Fatalf("AddProblem: %v", err)
-		}
 		return res.ID
 	}
 	g := add("Graph One", "graph-one", "Graphs")
@@ -637,7 +619,7 @@ func TestDue_PausedNoteIsScopedToTheTopicFilter(t *testing.T) {
 }
 
 func TestBulkStatus_RejectsTooManyIDs(t *testing.T) {
-	h, svc := pauseTestServer(t)
+	h, svc := pinnedTestServer(t)
 	a := addSeedProblem(t, svc, "A", "a")
 
 	form := url.Values{"action": {"pause"}}
@@ -663,15 +645,11 @@ func TestBulkStatus_RejectsTooManyIDs(t *testing.T) {
 // Due has two independently paginated lists, so its topic filter has to
 // carry both page sizes or picking a topic resets them.
 func TestDue_FilterFormCarriesBothPageSizes(t *testing.T) {
-	h, svc := pauseTestServer(t)
+	h, svc := pinnedTestServer(t)
 	addSeedProblem(t, svc, "Two Sum", "two-sum")
 
 	body := doGet(t, h, "/due?page_size=25&upcoming_page_size=50").Body.String()
-	start := strings.Index(body, `<form method="get" action="/due" class="library-toolbar">`)
-	if start < 0 {
-		t.Fatal("Due has no filter toolbar form")
-	}
-	form := body[start : start+strings.Index(body[start:], "</form>")]
+	form := formHTML(t, body, `<form method="get" action="/due" class="library-toolbar">`)
 	for _, want := range []string{`name="page_size" value="25"`, `name="upcoming_page_size" value="50"`} {
 		if !strings.Contains(form, want) {
 			t.Errorf("Due's filter form is missing %s:\n%s", want, form)
@@ -682,7 +660,7 @@ func TestDue_FilterFormCarriesBothPageSizes(t *testing.T) {
 // The select-all box does nothing without JavaScript, so it ships hidden
 // and the script reveals it.
 func TestLibrary_SelectAllIsHiddenUntilScriptRuns(t *testing.T) {
-	h, svc := pauseTestServer(t)
+	h, svc := pinnedTestServer(t)
 	addSeedProblem(t, svc, "Two Sum", "two-sum")
 
 	body := doGet(t, h, "/library").Body.String()
@@ -701,7 +679,7 @@ func TestLibrary_SelectAllIsHiddenUntilScriptRuns(t *testing.T) {
 
 // With no rows there is nothing to act on, so the bulk bar is left out.
 func TestLibrary_BulkBarIsOmittedWhenThereAreNoRows(t *testing.T) {
-	h, svc := pauseTestServer(t)
+	h, svc := pinnedTestServer(t)
 	addSeedProblem(t, svc, "Two Sum", "two-sum") // active, so status=paused is empty
 
 	empty := doGet(t, h, "/library?status=paused").Body.String()
@@ -722,7 +700,7 @@ func TestLibrary_BulkBarIsOmittedWhenThereAreNoRows(t *testing.T) {
 // page lists everything instead of silently matching nothing, and the
 // value isn't carried into links or the bulk redirect.
 func TestLibrary_UnknownDifficultyIsIgnored(t *testing.T) {
-	h, svc := pauseTestServer(t)
+	h, svc := pinnedTestServer(t)
 	a := addSeedProblem(t, svc, "Two Sum", "two-sum")
 
 	body := doGet(t, h, "/library?difficulty=Nope").Body.String()

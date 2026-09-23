@@ -13,6 +13,8 @@
 </div>
 
 <form method="get" action="/due" class="library-toolbar">
+  <input type="hidden" name="page_size" value="{{.DueTable.Page.PageSize}}">
+  <input type="hidden" name="upcoming_page_size" value="{{.Upcoming.Page.PageSize}}">
   <select name="topic">
     <option value="">All topics</option>
     {{range .Topics}}<option value="{{.}}" {{if eq . $.SelectedTopic}}selected{{end}}>{{.}}</option>{{end}}

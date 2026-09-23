@@ -659,3 +659,61 @@ func TestBulkStatus_RejectsTooManyIDs(t *testing.T) {
 		t.Errorf("status = %d for exactly %d ids, want 303", rec.Code, maxBulkIDs)
 	}
 }
+
+// Due has two independently paginated lists, so its topic filter has to
+// carry both page sizes or picking a topic resets them.
+func TestDue_FilterFormCarriesBothPageSizes(t *testing.T) {
+	h, svc := pauseTestServer(t)
+	addSeedProblem(t, svc, "Two Sum", "two-sum")
+
+	body := doGet(t, h, "/due?page_size=25&upcoming_page_size=50").Body.String()
+	start := strings.Index(body, `<form method="get" action="/due" class="library-toolbar">`)
+	if start < 0 {
+		t.Fatal("Due has no filter toolbar form")
+	}
+	form := body[start : start+strings.Index(body[start:], "</form>")]
+	for _, want := range []string{`name="page_size" value="25"`, `name="upcoming_page_size" value="50"`} {
+		if !strings.Contains(form, want) {
+			t.Errorf("Due's filter form is missing %s:\n%s", want, form)
+		}
+	}
+}
+
+// The select-all box does nothing without JavaScript, so it ships hidden
+// and the script reveals it.
+func TestLibrary_SelectAllIsHiddenUntilScriptRuns(t *testing.T) {
+	h, svc := pauseTestServer(t)
+	addSeedProblem(t, svc, "Two Sum", "two-sum")
+
+	body := doGet(t, h, "/library").Body.String()
+	i := strings.Index(body, `id="select-all"`)
+	if i < 0 {
+		t.Fatal("select-all checkbox missing")
+	}
+	tag := body[i : i+strings.Index(body[i:], ">")]
+	if !strings.Contains(tag, "hidden") {
+		t.Errorf("select-all should be hidden by default: %s", tag)
+	}
+	if !strings.Contains(body, "all.hidden = false") {
+		t.Error("the script never reveals the select-all checkbox")
+	}
+}
+
+// With no rows there is nothing to act on, so the bulk bar is left out.
+func TestLibrary_BulkBarIsOmittedWhenThereAreNoRows(t *testing.T) {
+	h, svc := pauseTestServer(t)
+	addSeedProblem(t, svc, "Two Sum", "two-sum") // active, so status=paused is empty
+
+	empty := doGet(t, h, "/library?status=paused").Body.String()
+	if strings.Contains(empty, `class="bulk-bar"`) {
+		t.Error("bulk bar shown on an empty table")
+	}
+	if strings.Contains(empty, `value="unpause"`) {
+		t.Error("Unpause button shown on an empty table")
+	}
+
+	full := doGet(t, h, "/library").Body.String()
+	if !strings.Contains(full, `class="bulk-bar"`) {
+		t.Error("bulk bar missing when there are rows")
+	}
+}

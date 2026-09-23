@@ -31,7 +31,7 @@
 
 <form method="post" action="/problems/bulk-status" id="bulk-form">
   {{range .BulkFields}}<input type="hidden" name="{{.Name}}" value="{{.Value}}">{{end}}
-  <div class="bulk-bar">
+  {{if .Rows}}<div class="bulk-bar">
     <span class="meta" id="selected-count"></span>
     <button type="submit" name="action" value="pause">Pause selected</button>
     <span class="bulk-unpause">
@@ -39,11 +39,11 @@
       <label for="target-per-day">Target reviews per day</label>
       <input type="number" id="target-per-day" name="target_per_day" class="input-small" value="5" min="1" onkeydown="if (event.key === 'Enter') event.preventDefault();">
     </span>
-  </div>
+  </div>{{end}}
 
   <div class="table-scroll">
   <table>
-    <tr><th class="check"><input type="checkbox" id="select-all" aria-label="Select all on this page"></th><th>Title</th><th>Difficulty</th><th>Topics</th><th>Interval</th><th>Next Review</th><th></th></tr>
+    <tr><th class="check"><input type="checkbox" id="select-all" aria-label="Select all on this page" hidden></th><th>Title</th><th>Difficulty</th><th>Topics</th><th>Interval</th><th>Next Review</th><th></th></tr>
     {{range .Rows}}
     <tr{{if .Paused}} class="row-paused"{{end}}>
       <td class="check"><input type="checkbox" class="row-check" name="id" value="{{.ID}}" aria-label="Select {{.Title}}"></td>
@@ -68,6 +68,8 @@
   (function () {
     var all = document.getElementById("select-all");
     var count = document.getElementById("selected-count");
+    if (!all || !count) return; // empty table: no rows, so no bulk bar
+    all.hidden = false; // shown only when the script that powers it runs
     var boxes = Array.prototype.slice.call(document.querySelectorAll(".row-check"));
     function update() {
       var n = 0;

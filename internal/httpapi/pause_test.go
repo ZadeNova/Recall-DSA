@@ -717,3 +717,26 @@ func TestLibrary_BulkBarIsOmittedWhenThereAreNoRows(t *testing.T) {
 		t.Error("bulk bar missing when there are rows")
 	}
 }
+
+// An unknown difficulty is dropped like an unknown sort or status: the
+// page lists everything instead of silently matching nothing, and the
+// value isn't carried into links or the bulk redirect.
+func TestLibrary_UnknownDifficultyIsIgnored(t *testing.T) {
+	h, svc := pauseTestServer(t)
+	a := addSeedProblem(t, svc, "Two Sum", "two-sum")
+
+	body := doGet(t, h, "/library?difficulty=Nope").Body.String()
+	if !strings.Contains(body, "Two Sum") {
+		t.Error("difficulty=Nope hid every row; want it ignored")
+	}
+	if strings.Contains(body, "Nope") {
+		t.Error("unknown difficulty echoed back into the page")
+	}
+
+	form := idsForm("pause", a)
+	form.Set("difficulty", "Nope")
+	loc := redirectLocation(t, doForm(t, h, http.MethodPost, "/problems/bulk-status", form), http.StatusSeeOther)
+	if loc.Query().Has("difficulty") {
+		t.Errorf("unknown difficulty carried into the redirect: %q", loc.String())
+	}
+}

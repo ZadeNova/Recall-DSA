@@ -117,6 +117,11 @@ Deleting a collection deletes its membership rows only, never problems (same rul
   - **Unpause every problem in a collection**: goes through the staggered unpause (§2).
 - Library multi-select (§1) stays for small everyday edits.
 
+### Refactors to fold in (from the pause/unpause code review)
+Collections adds a filter to Library (and likely Due), so do these as part of that change rather than on their own:
+- **Render filter `<select>` options from Go.** `libraryQuery` (`internal/httpapi/library.go`) is now the one Go place that names Library's filter params and validates their values, but `library.html` still hard-codes the option values (`"active"`, `"title"`, ...). Pass the allowed values (with labels) to the template, as `Difficulties` already is, so adding a collection filter or sort option touches Go only.
+- **Give Due the same treatment.** `handleDue` (`internal/httpapi/due.go`) still parses its topic and two page/page-size pairs inline, and repeats Library's clamp-and-re-query block twice. Introduce a `dueQuery` like `libraryQuery` (parse once, write back out for pagination and the filter form), and consider a shared clamp helper for all three lists.
+
 ### Edge cases (from code review)
 - **Editing a problem's URL changes its slug** (`UpdateProblem` rewrites `slug`), which would silently drop it from every collection. Update `collection_problems` slugs in the same transaction.
 - **Typos in pasted slugs** can't be checked without calling LeetCode (SPEC.md §13), so they'd sit as phantom "not yet tracked" members forever. List untracked slugs on the collection page so typos are visible and removable.

@@ -45,13 +45,15 @@ type libraryQuery struct {
 // URL: a crafted form can't smuggle extra params into the bulk redirect.
 func parseLibraryQuery(v url.Values) libraryQuery {
 	lq := libraryQuery{
-		Search:     v.Get("q"),
-		Topic:      v.Get("topic"),
-		Difficulty: service.Difficulty(v.Get("difficulty")),
-		Sort:       defaultLibrarySort,
-		Status:     service.ParseStatus(v.Get("status")),
-		Page:       pageFromQuery(v.Get("page")),
-		PageSize:   pageSizeFromQuery(v.Get("page_size")),
+		Search:   v.Get("q"),
+		Topic:    v.Get("topic"),
+		Sort:     defaultLibrarySort,
+		Status:   service.ParseStatus(v.Get("status")),
+		Page:     pageFromQuery(v.Get("page")),
+		PageSize: pageSizeFromQuery(v.Get("page_size")),
+	}
+	if d := service.Difficulty(v.Get("difficulty")); d.Valid() {
+		lq.Difficulty = d
 	}
 	if s := v.Get("sort"); s == "title" || s == "difficulty" {
 		lq.Sort = s

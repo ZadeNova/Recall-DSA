@@ -1,6 +1,6 @@
 {{define "due-table"}}
 {{if not .Items}}
-  <p>Nothing due right now — go solve something new on your own and log it via <a href="/problems/new">Add Problem</a>.</p>
+  <p>{{.EmptyMessage}}</p>
 {{else}}
 <div class="table-scroll">
 <table>

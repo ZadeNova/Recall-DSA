@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"fmt"
 	"html/template"
 	"log"
 	"net/http"
@@ -27,12 +28,24 @@ type glanceTableData struct {
 
 const nothingDueMessage = `Nothing due right now — go solve something new on your own and log it via <a href="/problems/new">Add Problem</a>.`
 
+// nothingDueMessageFor appends how many problems are paused, so an empty
+// queue caused by pausing isn't mistaken for a bug. Built in Go from an
+// integer only, so it's safe as template.HTML.
+func nothingDueMessageFor(paused int) template.HTML {
+	if paused <= 0 {
+		return nothingDueMessage
+	}
+	return nothingDueMessage + template.HTML(fmt.Sprintf(
+		` %s currently paused — see them in the <a href="/library?status=paused">Library</a>.`, problemCount(paused)))
+}
+
 // dueTableData feeds the "due-table" partial. SelectedTopic travels with
 // it (not read from an outer template scope) so each grade-form can
 // carry the current topic filter as a hidden field — handleGrade needs
 // to know it to recompute topic-scoped stats for its live htmx refresh.
 type dueTableData struct {
 	Items         []service.DueItem
+	EmptyMessage  template.HTML
 	SelectedTopic string
 	Page          pageInfo
 }
@@ -63,6 +76,7 @@ type homeViewData struct {
 	DueCount      int
 	Due           glanceTableData
 	TotalTracked  int
+	PausedCount   int
 	Difficulty    service.DifficultyCounts
 	UpcomingByDay []service.DayCount
 	Quote         string
@@ -112,6 +126,12 @@ func (s *Server) handleHome(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	pausedCount, err := s.svc.CountPaused(ctx)
+	if err != nil {
+		s.renderError(w, r, http.StatusInternalServerError, err)
+		return
+	}
+
 	difficulty, err := s.svc.DifficultyBreakdown(ctx)
 	if err != nil {
 		s.renderError(w, r, http.StatusInternalServerError, err)
@@ -128,10 +148,11 @@ func (s *Server) handleHome(w http.ResponseWriter, r *http.Request) {
 		DueCount: total,
 		Due: glanceTableData{
 			Items:        dueItems,
-			EmptyMessage: nothingDueMessage,
+			EmptyMessage: nothingDueMessageFor(pausedCount),
 			Page:         buildPageInfo("/", url.Values{}, "page", "page_size", page, pageSize, total),
 		},
 		TotalTracked:  countTotal,
+		PausedCount:   pausedCount,
 		Difficulty:    difficulty,
 		UpcomingByDay: byDay,
 		Quote:         randomQuote(),
@@ -195,6 +216,12 @@ func (s *Server) handleDue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	pausedCount, err := s.svc.CountPaused(ctx)
+	if err != nil {
+		s.renderError(w, r, http.StatusInternalServerError, err)
+		return
+	}
+
 	selectedTopic := ""
 	if topic != nil {
 		selectedTopic = *topic
@@ -208,6 +235,7 @@ func (s *Server) handleDue(w http.ResponseWriter, r *http.Request) {
 		SelectedTopic: selectedTopic,
 		DueTable: dueTableData{
 			Items:         items,
+			EmptyMessage:  nothingDueMessageFor(pausedCount),
 			SelectedTopic: selectedTopic,
 			Page:          buildPageInfo("/due", topicExtra, "page", "page_size", duePage, duePageSize, dueTotal),
 		},

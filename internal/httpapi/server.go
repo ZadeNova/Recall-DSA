@@ -49,6 +49,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /problems/{id}/delete", s.handleDeleteProblem)
 
 	mux.HandleFunc("GET /library", s.handleLibrary)
+	mux.HandleFunc("POST /problems/bulk-status", s.handleBulkStatus)
 
 	mux.HandleFunc("GET /problems/import", s.handleImportForm)
 	mux.HandleFunc("POST /problems/import/preview", s.handleImportPreview)

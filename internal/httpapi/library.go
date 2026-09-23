@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strconv"
 	"time"
 
 	"github.com/ZadeNova/recall-dsa/internal/service"
@@ -28,10 +29,18 @@ type libraryViewData struct {
 	SelectedDifficulty service.Difficulty
 	Search             string
 	Sort               string
+	Status             string
 	Rows               []libraryRow
 
 	TotalTracked int
+	PausedCount  int
 	Difficulty   service.DifficultyCounts
+
+	// Notice is the result of the last bulk pause/unpause, shown once
+	// after the redirect back here. BulkFields are the current filters,
+	// carried through the bulk form so the redirect lands on the same view.
+	Notice     string
+	BulkFields []hiddenField
 
 	Page pageInfo
 }
@@ -47,6 +56,7 @@ func (s *Server) handleLibrary(w http.ResponseWriter, r *http.Request) {
 	data := libraryViewData{
 		Difficulties: []service.Difficulty{service.DifficultyEasy, service.DifficultyMedium, service.DifficultyHard},
 		Sort:         defaultLibrarySort,
+		Status:       service.StatusActive,
 	}
 	filter := service.ListProblemsFilter{}
 
@@ -67,6 +77,10 @@ func (s *Server) handleLibrary(w http.ResponseWriter, r *http.Request) {
 		data.Sort = v
 	}
 	filter.Sort = data.Sort
+	if v := q.Get("status"); v == service.StatusPaused || v == service.StatusAll {
+		data.Status = v
+	}
+	filter.Status = data.Status
 
 	page := pageFromQuery(q.Get("page"))
 	pageSize := pageSizeFromQuery(q.Get("page_size"))
@@ -102,7 +116,22 @@ func (s *Server) handleLibrary(w http.ResponseWriter, r *http.Request) {
 		extra.Set("difficulty", string(data.SelectedDifficulty))
 	}
 	extra.Set("sort", data.Sort)
+	// Active is the default and is left out of the URL; anything else has
+	// to be carried on every Prev/Next link and the page-size form, or
+	// paging would silently fall back to the Active view.
+	if data.Status != service.StatusActive {
+		extra.Set("status", data.Status)
+	}
 	data.Page = buildPageInfo("/library", extra, "page", "page_size", page, pageSize, total)
+
+	bulk := url.Values{}
+	for k, v := range extra {
+		bulk[k] = v
+	}
+	bulk.Set("page", strconv.Itoa(page))
+	bulk.Set("page_size", strconv.Itoa(pageSize))
+	data.BulkFields = hiddenFieldsFrom(bulk)
+	data.Notice = bulkNotice(q.Get("done"), q.Get("n"))
 
 	today := s.svc.Today()
 	for _, item := range items {
@@ -115,6 +144,11 @@ func (s *Server) handleLibrary(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	data.TotalTracked = total
+
+	if data.PausedCount, err = s.svc.CountPaused(ctx); err != nil {
+		s.renderError(w, r, http.StatusInternalServerError, err)
+		return
+	}
 
 	difficulty, err := s.svc.DifficultyBreakdown(ctx)
 	if err != nil {
@@ -181,4 +215,103 @@ func daysBetween(a, b time.Time) int {
 	utcA := time.Date(ay, am, ad, 0, 0, 0, 0, time.UTC)
 	utcB := time.Date(by, bm, bd, 0, 0, 0, 0, time.UTC)
 	return int(utcA.Sub(utcB).Hours() / 24)
+}
+
+// libraryReturnParams are the only params handleBulkStatus copies into
+// its redirect back to /library. It's a whitelist rebuilt from scratch,
+// never the raw request URL, so a crafted form can't turn the redirect
+// into an open redirect or inject extra params.
+var libraryReturnParams = []string{"q", "topic", "difficulty", "sort", "status", "page", "page_size"}
+
+// handleBulkStatus pauses or unpauses the ticked Library rows, then
+// redirects (post/redirect/get) back to the same filtered view with the
+// outcome in ?done=&n= for handleLibrary to turn into a notice.
+func (s *Server) handleBulkStatus(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		s.renderError(w, r, http.StatusBadRequest, err)
+		return
+	}
+
+	action := r.PostFormValue("action")
+	if action != "pause" && action != "unpause" {
+		s.renderError(w, r, http.StatusBadRequest, fmt.Errorf("unknown action %q", action))
+		return
+	}
+
+	var ids []int64
+	for _, raw := range r.PostForm["id"] {
+		id, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil {
+			s.renderError(w, r, http.StatusBadRequest, fmt.Errorf("invalid problem id %q", raw))
+			return
+		}
+		ids = append(ids, id)
+	}
+
+	back := url.Values{}
+	for _, k := range libraryReturnParams {
+		if v := r.PostFormValue(k); v != "" {
+			back.Set(k, v)
+		}
+	}
+
+	if len(ids) == 0 {
+		back.Set("done", "none")
+		http.Redirect(w, r, "/library?"+back.Encode(), http.StatusSeeOther)
+		return
+	}
+
+	var (
+		n   int
+		err error
+	)
+	if action == "pause" {
+		n, err = s.svc.PauseProblems(r.Context(), ids)
+		back.Set("done", "paused")
+	} else {
+		// A missing or invalid target parses to 0, which the service
+		// replaces with its default.
+		target, _ := strconv.Atoi(r.PostFormValue("target_per_day"))
+		n, err = s.svc.UnpauseProblems(r.Context(), ids, target)
+		back.Set("done", "unpaused")
+	}
+	if err != nil {
+		s.renderError(w, r, http.StatusInternalServerError, err)
+		return
+	}
+	back.Set("n", strconv.Itoa(n))
+	http.Redirect(w, r, "/library?"+back.Encode(), http.StatusSeeOther)
+}
+
+// bulkNotice turns the ?done=&n= a bulk action redirected with into the
+// message shown on Library. Anything unrecognised or malformed yields no
+// notice rather than echoing arbitrary query text into the page.
+func bulkNotice(done, nRaw string) string {
+	if done == "none" {
+		return "No problems selected."
+	}
+	n, err := strconv.Atoi(nRaw)
+	if err != nil || n < 0 {
+		return ""
+	}
+	switch done {
+	case "paused":
+		if n == 0 {
+			return "Nothing to pause — the selected problems were already paused."
+		}
+		return fmt.Sprintf("Paused %s.", problemCount(n))
+	case "unpaused":
+		if n == 0 {
+			return "Nothing to unpause — the selected problems weren't paused."
+		}
+		return fmt.Sprintf("Unpaused %s. They return to your queue over the next few days.", problemCount(n))
+	}
+	return ""
+}
+
+func problemCount(n int) string {
+	if n == 1 {
+		return "1 problem"
+	}
+	return fmt.Sprintf("%d problems", n)
 }

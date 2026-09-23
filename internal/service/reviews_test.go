@@ -144,18 +144,14 @@ func TestRecommendDue_FiltersOverdueAndOrdersByMostOverdueFirst(t *testing.T) {
 // TestRecommendDue_NoConnectionPoolDeadlockUnderSingleConnection guards
 // against a real regression: scanReviewItems once called
 // loadProblemTopics per-row while the outer *sql.Rows was still open, so
-// the inner query would block forever waiting for a connection the
-// outer, unfinished iteration was still holding — reproduced manually by
-// setting SetMaxOpenConns(1) and watching ListLibrary/RecommendDue hang.
-// SetMaxOpenConns(1) is standard advice for a single-writer SQLite app
-// (SPEC.md §10), so this isn't a hypothetical: it's one config change
-// away from being live. Topics must still come back correctly attached,
-// not just "didn't hang" — the fix (batch-loading after the outer rows
-// are drained) shouldn't change what's returned, only when the topics
-// query runs.
+// the inner query blocked forever waiting for the one connection the
+// outer, unfinished iteration was holding. db.Open pins the pool to one
+// connection, so this would hang every Due and Library page. Topics must
+// still come back attached, not just "didn't hang": the fix (batch-loading
+// after the outer rows are drained) changes when the topics query runs,
+// not what's returned.
 func TestRecommendDue_NoConnectionPoolDeadlockUnderSingleConnection(t *testing.T) {
 	s := newTestService(t)
-	s.db.SetMaxOpenConns(1)
 	ctx := context.Background()
 	// Graded 10 days ago with Good's 5-day first interval lands 5 days in
 	// the past — overdue, so RecommendDue actually returns these rows
@@ -198,7 +194,7 @@ func TestRecommendDue_NoConnectionPoolDeadlockUnderSingleConnection(t *testing.T
 			}
 		}
 	case <-time.After(3 * time.Second):
-		t.Fatal("RecommendDue deadlocked under SetMaxOpenConns(1) — a per-row query is running while the outer cursor is still open")
+		t.Fatal("RecommendDue deadlocked on the single connection — a per-row query is running while the outer cursor is still open")
 	}
 }
 

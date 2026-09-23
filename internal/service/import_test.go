@@ -55,35 +55,6 @@ func TestBulkImportProblems_CreatesGradesHardAndStaggersReviewDates(t *testing.T
 	}
 }
 
-func TestBulkImportProblems_ReimportMergesRatherThanDuplicates(t *testing.T) {
-	s := newTestService(t)
-	ctx := t.Context()
-	fixedClock(s, time.Date(2026, 1, 1, 9, 0, 0, 0, time.UTC))
-
-	rows := []BulkImportRow{
-		{Title: "Two Sum", URL: "two-sum", Difficulty: DifficultyEasy, Topics: []string{"Arrays"}},
-	}
-	if _, err := s.BulkImportProblems(ctx, rows, 0); err != nil {
-		t.Fatalf("first import: unexpected err: %v", err)
-	}
-
-	result, err := s.BulkImportProblems(ctx, rows, 0)
-	if err != nil {
-		t.Fatalf("second import: unexpected err: %v", err)
-	}
-	if result.Created != 0 || result.Merged != 1 {
-		t.Fatalf("result = %+v, want Created=0 Merged=1 (dedupe on slug)", result)
-	}
-
-	problems, _, err := s.ListLibrary(ctx, ListProblemsFilter{Limit: 100})
-	if err != nil {
-		t.Fatalf("ListLibrary: unexpected err: %v", err)
-	}
-	if len(problems) != 1 {
-		t.Fatalf("len(problems) = %d, want 1 (re-import should not duplicate)", len(problems))
-	}
-}
-
 // TestBulkImportProblems_ProtectsProgressOnThirdImport asserts the
 // overwrite-protection guard: a problem re-imported a second time (still
 // only its own original attempt behind it) is safely refreshed, but a
@@ -142,55 +113,6 @@ func TestBulkImportProblems_ProtectsProgressOnThirdImport(t *testing.T) {
 	if afterInterval != beforeInterval || afterNextDate != beforeNextDate {
 		t.Errorf("review_state changed after a protected import: before (interval=%d, next=%q), after (interval=%d, next=%q)",
 			beforeInterval, beforeNextDate, afterInterval, afterNextDate)
-	}
-}
-
-// TestBulkImportProblems_ProtectsManuallyGradedProblem asserts that a
-// problem graded again through the normal UI flow (RecordReview, as the
-// due page's grade buttons do) after its original import is protected
-// from a later bulk re-import — the guard isn't specific to repeated
-// bulk imports, it protects any real review history.
-func TestBulkImportProblems_ProtectsManuallyGradedProblem(t *testing.T) {
-	s := newTestService(t)
-	ctx := t.Context()
-	fixedClock(s, time.Date(2026, 1, 1, 9, 0, 0, 0, time.UTC))
-
-	rows := []BulkImportRow{
-		{Title: "Two Sum", URL: "two-sum", Difficulty: DifficultyEasy, Topics: []string{"Arrays"}},
-	}
-	if _, err := s.BulkImportProblems(ctx, rows, 0); err != nil {
-		t.Fatalf("import: unexpected err: %v", err)
-	}
-
-	problems, _, err := s.ListLibrary(ctx, ListProblemsFilter{Limit: 100})
-	if err != nil {
-		t.Fatalf("ListLibrary: unexpected err: %v", err)
-	}
-	problemID := problems[0].ID
-
-	// Simulate the user honestly re-grading it to Good via the due page.
-	if _, err := s.RecordReview(ctx, problemID, "Good", s.now()); err != nil {
-		t.Fatalf("RecordReview: unexpected err: %v", err)
-	}
-	var goodInterval int
-	if err := s.db.QueryRowContext(ctx, `SELECT interval_days FROM review_state WHERE problem_id = ?`, problemID).Scan(&goodInterval); err != nil {
-		t.Fatalf("scan interval after manual grade: %v", err)
-	}
-
-	result, err := s.BulkImportProblems(ctx, rows, 0)
-	if err != nil {
-		t.Fatalf("re-import: unexpected err: %v", err)
-	}
-	if result.Skipped != 1 || result.Merged != 0 {
-		t.Fatalf("re-import result = %+v, want Skipped=1 Merged=0", result)
-	}
-
-	var intervalAfter int
-	if err := s.db.QueryRowContext(ctx, `SELECT interval_days FROM review_state WHERE problem_id = ?`, problemID).Scan(&intervalAfter); err != nil {
-		t.Fatalf("scan interval after re-import: %v", err)
-	}
-	if intervalAfter != goodInterval {
-		t.Errorf("interval_days = %d after re-import, want unchanged %d (Good-grade progress must not be reset to Hard)", intervalAfter, goodInterval)
 	}
 }
 

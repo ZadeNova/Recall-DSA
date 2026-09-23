@@ -93,19 +93,6 @@ func TestListLibrary_SearchSortAndPagination(t *testing.T) {
 		}
 	})
 
-	t.Run("sort by title ascending", func(t *testing.T) {
-		items, _, err := s.ListLibrary(ctx, ListProblemsFilter{Sort: "title", Limit: 10})
-		if err != nil {
-			t.Fatalf("ListLibrary: unexpected err: %v", err)
-		}
-		want := []string{"3sum", "climbing-stairs", "trapping-rain-water", "two-sum"}
-		for i, slug := range want {
-			if items[i].Slug != slug {
-				t.Errorf("items[%d].Slug = %q, want %q (order: %v)", i, items[i].Slug, slug, sluglist(items))
-			}
-		}
-	})
-
 	t.Run("sort by difficulty ascending", func(t *testing.T) {
 		items, _, err := s.ListLibrary(ctx, ListProblemsFilter{Sort: "difficulty", Limit: 10})
 		if err != nil {
@@ -116,7 +103,7 @@ func TestListLibrary_SearchSortAndPagination(t *testing.T) {
 		}
 	})
 
-	t.Run("pagination returns the right slice and total count", func(t *testing.T) {
+	t.Run("sort by title, paginated: right slices and total", func(t *testing.T) {
 		page1, total, err := s.ListLibrary(ctx, ListProblemsFilter{Sort: "title", Limit: 2, Offset: 0})
 		if err != nil {
 			t.Fatalf("ListLibrary page1: unexpected err: %v", err)

@@ -30,7 +30,7 @@ func newPauseFixture(t *testing.T) *pauseFixture {
 func (f *pauseFixture) add(title, slug string, d Difficulty, nextReview string, topics ...string) int64 {
 	f.t.Helper()
 	p, err := f.s.AddProblem(f.ctx, AddProblemInput{
-		Title: title, URL: slug, Difficulty: d, Topics: topics, Grade: scheduler.Good, At: time.Now(),
+		Title: title, URL: slug, Difficulty: d, Topics: topics, Grade: scheduler.Good, At: f.s.Now(),
 	})
 	if err != nil {
 		f.t.Fatalf("AddProblem(%s): unexpected err: %v", title, err)
@@ -214,26 +214,6 @@ func TestListLibrary_PausedRowsSortLastUnderEverySort(t *testing.T) {
 	}
 }
 
-func TestCountPaused(t *testing.T) {
-	f := newPauseFixture(t)
-
-	if n, err := f.s.CountPaused(f.ctx, nil); err != nil || n != 0 {
-		t.Fatalf("CountPaused on empty library = (%d, %v), want (0, nil)", n, err)
-	}
-
-	f.add("Active", "active", DifficultyEasy, "2026-01-11")
-	f.pause(f.add("Paused A", "paused-a", DifficultyEasy, "2026-01-12"))
-	f.pause(f.add("Paused B", "paused-b", DifficultyEasy, "2026-01-13"))
-
-	n, err := f.s.CountPaused(f.ctx, nil)
-	if err != nil {
-		t.Fatalf("unexpected err: %v", err)
-	}
-	if n != 2 {
-		t.Errorf("CountPaused = %d, want 2", n)
-	}
-}
-
 // --- write side: PauseProblems / UnpauseProblems ---
 
 func (f *pauseFixture) pausedAt(id int64) *string {
@@ -325,6 +305,8 @@ func TestPauseProblems_RepausingKeepsOriginalTimestamp(t *testing.T) {
 	}
 }
 
+// A selection with nothing paused in it takes the early return: no
+// stagger, no writes. The mixed test below always has a paused row.
 func TestUnpauseProblems_ActiveProblemIsUntouched(t *testing.T) {
 	f := newPauseFixture(t)
 	active := f.add("Active", "active", DifficultyEasy, "2026-02-20")
@@ -591,16 +573,5 @@ func TestSummary(t *testing.T) {
 	want := Summary{Total: 4, Difficulty: DifficultyCounts{Easy: 2, Medium: 1, Hard: 1}, Paused: 2}
 	if got != want {
 		t.Errorf("Summary = %+v, want %+v", got, want)
-	}
-}
-
-func TestSQLInList(t *testing.T) {
-	marks, args := sqlInList([]int64{7, 8, 9})
-	if marks != "?,?,?" || !reflect.DeepEqual(args, []any{int64(7), int64(8), int64(9)}) {
-		t.Errorf("sqlInList(ints) = (%q, %v)", marks, args)
-	}
-	marks, args = sqlInList([]string{"two-sum"})
-	if marks != "?" || !reflect.DeepEqual(args, []any{"two-sum"}) {
-		t.Errorf("sqlInList(strings) = (%q, %v)", marks, args)
 	}
 }

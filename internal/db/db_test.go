@@ -16,18 +16,6 @@ func openTestDB(t *testing.T) *sql.DB {
 	return conn
 }
 
-func TestOpen_CreatesAllTables(t *testing.T) {
-	conn := openTestDB(t)
-
-	for _, table := range []string{"problems", "attempts", "review_state", "topics", "problem_topics"} {
-		var name string
-		err := conn.QueryRow(`SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?`, table).Scan(&name)
-		if err != nil {
-			t.Errorf("table %q: %v", table, err)
-		}
-	}
-}
-
 func TestOpen_SeedsStandardTopics(t *testing.T) {
 	conn := openTestDB(t)
 
@@ -138,6 +126,7 @@ func TestOpen_FreshDBHasPausedAtColumn(t *testing.T) {
 // database created before pause/unpause shipped. CREATE TABLE IF NOT
 // EXISTS is a no-op against it, so the column has to be added by
 // ensurePausedAtColumn — and existing rows must read as active (NULL).
+// Reopening afterwards covers the guard that keeps the ALTER one-time.
 func TestOpen_AddsPausedAtToExistingDB(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "old.db")
 
@@ -170,7 +159,6 @@ func TestOpen_AddsPausedAtToExistingDB(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open on pre-pause database: %v", err)
 	}
-	defer conn.Close()
 
 	if !hasPausedAtColumn(t, conn) {
 		t.Fatal("paused_at column was not added to an existing review_state table")
@@ -182,18 +170,13 @@ func TestOpen_AddsPausedAtToExistingDB(t *testing.T) {
 	if pausedAt.Valid {
 		t.Errorf("existing row paused_at = %q, want NULL (active)", pausedAt.String)
 	}
-}
+	conn.Close()
 
-func TestOpen_PausedAtMigrationIsIdempotent(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "test.db")
-	for i := 1; i <= 2; i++ {
-		conn, err := Open(path)
-		if err != nil {
-			t.Fatalf("Open #%d: %v", i, err)
-		}
-		if !hasPausedAtColumn(t, conn) {
-			t.Errorf("Open #%d: paused_at missing", i)
-		}
-		conn.Close()
+	// The next restart must see the column and skip the ALTER, not fail
+	// with "duplicate column".
+	again, err := Open(path)
+	if err != nil {
+		t.Fatalf("reopen after migration: %v", err)
 	}
+	again.Close()
 }

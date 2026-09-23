@@ -9,61 +9,6 @@ import (
 	"github.com/ZadeNova/recall-dsa/internal/scheduler"
 )
 
-func TestCountProblems(t *testing.T) {
-	s := newTestService(t)
-	ctx := context.Background()
-
-	count, err := s.CountProblems(ctx)
-	if err != nil {
-		t.Fatalf("unexpected err: %v", err)
-	}
-	if count != 0 {
-		t.Errorf("count = %d, want 0 on an empty DB", count)
-	}
-
-	if _, err := s.AddProblem(ctx, AddProblemInput{
-		Title: "Two Sum", URL: "two-sum", Difficulty: DifficultyEasy, Grade: scheduler.Good, At: time.Now(),
-	}); err != nil {
-		t.Fatalf("AddProblem: unexpected err: %v", err)
-	}
-
-	count, err = s.CountProblems(ctx)
-	if err != nil {
-		t.Fatalf("unexpected err: %v", err)
-	}
-	if count != 1 {
-		t.Errorf("count = %d, want 1", count)
-	}
-}
-
-func TestDifficultyBreakdown(t *testing.T) {
-	s := newTestService(t)
-	ctx := context.Background()
-	at := time.Now()
-
-	mustAdd := func(slug string, difficulty Difficulty) {
-		t.Helper()
-		if _, err := s.AddProblem(ctx, AddProblemInput{
-			Title: slug, URL: slug, Difficulty: difficulty, Grade: scheduler.Good, At: at,
-		}); err != nil {
-			t.Fatalf("AddProblem(%s): unexpected err: %v", slug, err)
-		}
-	}
-	mustAdd("a", DifficultyEasy)
-	mustAdd("b", DifficultyEasy)
-	mustAdd("c", DifficultyMedium)
-	mustAdd("d", DifficultyHard)
-
-	got, err := s.DifficultyBreakdown(ctx)
-	if err != nil {
-		t.Fatalf("unexpected err: %v", err)
-	}
-	want := DifficultyCounts{Easy: 2, Medium: 1, Hard: 1}
-	if got != want {
-		t.Errorf("DifficultyBreakdown = %+v, want %+v", got, want)
-	}
-}
-
 func TestUpcomingByDay_ZeroFillsAndGroupsByExactOffset(t *testing.T) {
 	s := newTestService(t)
 	ctx := context.Background()

@@ -141,7 +141,7 @@ func TestListLibrary_StatusFilter(t *testing.T) {
 	f.pause(f.add("Paused One", "paused-one", DifficultyEasy, "2026-01-13"))
 
 	cases := []struct {
-		status    string
+		status    Status
 		wantTotal int
 	}{
 		{"", 2}, // default is active
@@ -151,7 +151,7 @@ func TestListLibrary_StatusFilter(t *testing.T) {
 		{"nonsense", 2}, // unknown values fall back to active
 	}
 	for _, c := range cases {
-		t.Run("status="+c.status, func(t *testing.T) {
+		t.Run("status="+string(c.status), func(t *testing.T) {
 			items, total, err := f.s.ListLibrary(f.ctx, ListProblemsFilter{Status: c.status, Limit: 10})
 			if err != nil {
 				t.Fatalf("unexpected err: %v", err)

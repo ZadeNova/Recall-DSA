@@ -7,24 +7,24 @@
 
 <form method="get" action="/library" class="library-toolbar">
   <input type="hidden" name="page_size" value="{{.Page.PageSize}}">
-  <input type="text" id="library-search" name="q" value="{{.Search}}" placeholder="Search by title... (press / to focus)">
+  <input type="text" id="library-search" name="q" value="{{.Query.Search}}" placeholder="Search by title... (press / to focus)">
   <select name="topic">
     <option value="">All topics</option>
-    {{range .Topics}}<option value="{{.}}" {{if eq . $.SelectedTopic}}selected{{end}}>{{.}}</option>{{end}}
+    {{range .Topics}}<option value="{{.}}" {{if eq . $.Query.Topic}}selected{{end}}>{{.}}</option>{{end}}
   </select>
   <select name="difficulty">
     <option value="">All difficulties</option>
-    {{range .Difficulties}}<option value="{{.}}" {{if eq . $.SelectedDifficulty}}selected{{end}}>{{.}}</option>{{end}}
+    {{range .Difficulties}}<option value="{{.}}" {{if eq . $.Query.Difficulty}}selected{{end}}>{{.}}</option>{{end}}
   </select>
   <select name="status" aria-label="Status">
-    <option value="active" {{if eq .Status "active"}}selected{{end}}>Status: Active</option>
-    <option value="paused" {{if eq .Status "paused"}}selected{{end}}>Status: Paused</option>
-    <option value="all" {{if eq .Status "all"}}selected{{end}}>Status: All</option>
+    <option value="active" {{if eq .Query.Status "active"}}selected{{end}}>Status: Active</option>
+    <option value="paused" {{if eq .Query.Status "paused"}}selected{{end}}>Status: Paused</option>
+    <option value="all" {{if eq .Query.Status "all"}}selected{{end}}>Status: All</option>
   </select>
   <select name="sort">
-    <option value="next_review" {{if eq .Sort "next_review"}}selected{{end}}>Sort: Next Review</option>
-    <option value="title" {{if eq .Sort "title"}}selected{{end}}>Sort: Title (A-Z)</option>
-    <option value="difficulty" {{if eq .Sort "difficulty"}}selected{{end}}>Sort: Difficulty</option>
+    <option value="next_review" {{if eq .Query.Sort "next_review"}}selected{{end}}>Sort: Next Review</option>
+    <option value="title" {{if eq .Query.Sort "title"}}selected{{end}}>Sort: Title (A-Z)</option>
+    <option value="difficulty" {{if eq .Query.Sort "difficulty"}}selected{{end}}>Sort: Difficulty</option>
   </select>
   <button type="submit">Filter</button>
 </form>

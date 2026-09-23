@@ -51,7 +51,7 @@ func redirectLocation(t *testing.T, rec *httptest.ResponseRecorder, wantCode int
 	return loc
 }
 
-func countStatus(t *testing.T, svc *service.Service, status string) int {
+func countStatus(t *testing.T, svc *service.Service, status service.Status) int {
 	t.Helper()
 	_, total, err := svc.ListLibrary(t.Context(), service.ListProblemsFilter{Status: status})
 	if err != nil {

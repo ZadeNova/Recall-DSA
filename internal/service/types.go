@@ -94,13 +94,26 @@ type UpdateProblemInput struct {
 	Topics     []string
 }
 
-// Library status filter values (ListProblemsFilter.Status). Anything
-// else, including empty, is treated as StatusActive.
+// Status is Library's status filter (ListProblemsFilter.Status): which
+// problems to list by whether they're paused. The zero value, like any
+// unrecognised value, lists active problems only.
+type Status string
+
 const (
-	StatusActive = "active"
-	StatusPaused = "paused"
-	StatusAll    = "all"
+	StatusActive Status = "active"
+	StatusPaused Status = "paused"
+	StatusAll    Status = "all"
 )
+
+// ParseStatus maps a query-string value to a Status, falling back to
+// StatusActive for anything it doesn't recognise, including "".
+func ParseStatus(v string) Status {
+	switch s := Status(v); s {
+	case StatusPaused, StatusAll:
+		return s
+	}
+	return StatusActive
+}
 
 // ListProblemsFilter narrows ListLibrary's results (SPEC.md §7) by
 // topic and/or difficulty, plus search/sort/pagination. A nil Topic or
@@ -112,7 +125,7 @@ type ListProblemsFilter struct {
 	Difficulty *Difficulty
 	Search     *string
 	Sort       string // "next_review" (default), "title", or "difficulty"
-	Status     string // StatusActive (default), StatusPaused, or StatusAll
+	Status     Status // StatusActive (default), StatusPaused, or StatusAll
 	Limit      int
 	Offset     int
 }
